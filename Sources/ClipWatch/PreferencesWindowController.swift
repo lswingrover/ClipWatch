@@ -52,6 +52,7 @@ final class PreferencesViewController: NSViewController {
     private var retentionLabel:   NSTextField!
     private var screenSegment:    NSSegmentedControl!
     private var loginToggle:      NSButton!
+    private var secureModeToggle: NSButton!
     private var excludedTable:    NSTableView!
     private var items:            [ExclusionItem] = []
 
@@ -126,6 +127,16 @@ final class PreferencesViewController: NSViewController {
         loginToggle = NSButton(checkboxWithTitle: "Launch ClipWatch at login",
                                target: self, action: #selector(loginToggled))
         controlsStack.addArrangedSubview(loginToggle)
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
+
+        // Security
+        controlsStack.addArrangedSubview(sectionHeader("Security"))
+        secureModeToggle = NSButton(
+            checkboxWithTitle: "Require Touch ID to open panel",
+            target: self,
+            action: #selector(secureModeToggled)
+        )
+        controlsStack.addArrangedSubview(secureModeToggle)
         controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
 
         // Exclusions header
@@ -255,6 +266,8 @@ final class PreferencesViewController: NSViewController {
         if #available(macOS 13.0, *) {
             loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
         }
+
+        secureModeToggle.state = Prefs.isSecureModeEnabled() ? .on : .off
     }
 
     // MARK: - Actions
@@ -275,6 +288,10 @@ final class PreferencesViewController: NSViewController {
     @objc private func screenModeChanged() {
         let mode = screenSegment.selectedSegment == 0 ? "activeApp" : "cursor"
         UserDefaults.standard.set(mode, forKey: Prefs.screenFocusMode)
+    }
+
+    @objc private func secureModeToggled() {
+        UserDefaults.standard.set(secureModeToggle.state == .on, forKey: Prefs.secureMode)
     }
 
     @objc private func loginToggled() {

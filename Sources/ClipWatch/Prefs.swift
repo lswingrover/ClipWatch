@@ -10,6 +10,7 @@ enum Prefs {
     static let screenFocusMode = "screenFocusMode"  // String "activeApp" | "cursor"
     static let excludedApps    = "excludedApps"     // [String] bundle IDs
     static let excludedURLs    = "excludedURLs"     // [String] domain/URL patterns
+    static let secureMode      = "secureMode"       // Bool — require Touch ID to open panel
     static let launchAtLogin   = "launchAtLogin"    // Bool
 
     static let defaultExcludedApps: [String] = [
@@ -35,6 +36,10 @@ enum Prefs {
         let v = UserDefaults.standard.integer(forKey: hotkeyModifiers)
         // default: option (524288) + command (1048576) = 1572864
         return v > 0 ? v : 1572864
+    }
+
+    static func isSecureModeEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: secureMode)
     }
 
     static func screenMode() -> String {

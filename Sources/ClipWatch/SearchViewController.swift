@@ -2,45 +2,54 @@ import AppKit
 
 // MARK: - SearchViewController
 //
-// The floating panel's content: a search field on top, clip list below.
+// The floating panel's content: search field on top, clip list below.
 //
-// Key routing strategy:
-//   NSEvent.addLocalMonitorForEvents intercepts ↑↓/↩/⎋/⌘P/⌘⌫ before
-//   the field editor sees them. This is reliable in NSPanel with
-//   .nonactivatingPanel where NSTextFieldDelegate.control(_:textView:doCommandBy:)
-//   is not delivered consistently. The monitor is installed when the panel
-//   appears (prepareForDisplay) and torn down when it hides (reset) to
-//   avoid leaking.
+// Key routing:
+//   NSEvent.addLocalMonitorForEvents intercepts ↑↓/↩/⎋/⌘P/⌘S/⌘⌫/hotkey
+//   before the field editor sees them. Installed when the panel appears
+//   (prepareForDisplay) and torn down on reset() to avoid leaking.
+//
+// Sensitive clips:
+//   ClipCellView renders locked state when clip.sensitive && !isAuthenticated.
+//   Pressing ↩ on a locked clip triggers onAuthNeeded. On success, isAuthenticated
+//   flips true, the table reloads to show content, and the paste fires.
+//   ⌘S toggles the sensitive flag on the selected clip manually.
 //
 // Layout:
-//   [🔍 Search clipboard history…                      ]
-//   ──────────────────────────────────────────────────
-//   [app icon] [content preview...............] [  2h ]
-//              [Source App Name               ] [ 📌  ]
-//   ──────────────────────────────────────────────────
-//   ↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss
+//   [🔍 Search clipboard history…                            ]
+//   ─────────────────────────────────────────────────────────
+//   [app icon] [content preview...........................] [2h]
+//              [Source App Name                          ] [📌]
+//   ─────────────────────────────────────────────────────────
+//   ↑↓ navigate   ↩ paste   ⌘P pin   ⌘S sensitive   ⌘⌫ delete   esc dismiss
 
 final class SearchViewController: NSViewController {
 
-    var onPaste:   ((String) -> Void)?
-    var onDismiss: (() -> Void)?
+    var onPaste:     ((String) -> Void)?
+    var onDismiss:   (() -> Void)?
+    /// Called when the user tries to act on a sensitive clip while unauthenticated.
+    /// The closure receives a completion block to call after auth succeeds.
+    var onAuthNeeded: ((@escaping () -> Void) -> Void)?
 
-    private var clips: [ClipStore.Clip] = []
+    private var clips:       [ClipStore.Clip] = []
     private var searchField: NSTextField!
     private var tableView:   NSTableView!
     private var scrollView:  NSScrollView!
     private var emptyLabel:  NSTextField!
-    private var keyMonitor:  Any?   // local key-down monitor
+    private var keyMonitor:  Any?
+
+    /// Reflects the session auth state set by PanelController.
+    var isAuthenticated = false
 
     // MARK: - View lifecycle
 
     override func loadView() {
         let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 540, height: 440))
-        root.blendingMode  = .behindWindow
-        root.material      = .popover
-        root.state         = .active
-        root.wantsLayer    = true
-        root.layer?.cornerRadius = 12
+        root.blendingMode = .behindWindow
+        root.material     = .popover
+        root.state        = .active
+        root.wantsLayer   = true
+        root.layer?.cornerRadius  = 12
         root.layer?.masksToBounds = true
         view = root
 
@@ -54,10 +63,10 @@ final class SearchViewController: NSViewController {
     private func setupSearchArea() {
         let icon = NSImageView()
         icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.image             = NSImage(systemSymbolName: "magnifyingglass",
+        icon.image            = NSImage(systemSymbolName: "magnifyingglass",
                                         accessibilityDescription: nil)
-        icon.contentTintColor  = .tertiaryLabelColor
-        icon.imageScaling      = .scaleProportionallyDown
+        icon.contentTintColor = .tertiaryLabelColor
+        icon.imageScaling     = .scaleProportionallyDown
         view.addSubview(icon)
 
         searchField = NSTextField(frame: .zero)
@@ -148,7 +157,7 @@ final class SearchViewController: NSViewController {
 
     private func setupHintBar() {
         let hint = NSTextField(labelWithString:
-            "↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss")
+            "↑↓ navigate   ↩ paste   ⌘P pin   ⌘S sensitive   ⌘⌫ delete   esc dismiss")
         hint.translatesAutoresizingMaskIntoConstraints = false
         hint.textColor = .secondaryLabelColor
         hint.font      = .monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -163,16 +172,14 @@ final class SearchViewController: NSViewController {
 
     // MARK: - Display
 
-    func prepareForDisplay() {
+    func prepareForDisplay(isAuthenticated: Bool = false) {
+        self.isAuthenticated   = isAuthenticated
         searchField.stringValue = ""
         reload(query: "")
         focusSearchField()
         installKeyMonitor()
     }
 
-    /// Called by PanelController when NSWindow.didBecomeKeyNotification fires —
-    /// the window is guaranteed to be key at that point, so makeFirstResponder
-    /// reliably installs the field editor onto the search field.
     func focusSearchField() {
         view.window?.makeFirstResponder(searchField)
     }
@@ -182,6 +189,7 @@ final class SearchViewController: NSViewController {
         searchField.stringValue = ""
         clips = []
         tableView.reloadData()
+        isAuthenticated = false
     }
 
     // MARK: - Key monitor
@@ -198,7 +206,7 @@ final class SearchViewController: NSViewController {
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
 
-    /// Returns nil to consume the event; returns the event to let it fall through.
+    /// Returns nil to consume; returns the event to let it fall through.
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
@@ -217,6 +225,8 @@ final class SearchViewController: NSViewController {
         case 53:  onDismiss?();          return nil         // ⎋
         case 35 where mods == .command:                     // ⌘P
             togglePinSelected(); return nil
+        case 1  where mods == .command:                     // ⌘S
+            toggleSensitiveSelected(); return nil
         case 51 where mods == .command:                     // ⌘⌫
             deleteSelected(); return nil
         default:
@@ -244,7 +254,19 @@ final class SearchViewController: NSViewController {
     private func pasteSelected() {
         let row = tableView.selectedRow
         guard row >= 0, row < clips.count else { return }
-        onPaste?(clips[row].content)
+        let clip = clips[row]
+
+        // Sensitive clip and not yet authenticated → request auth, then paste
+        if clip.sensitive && !isAuthenticated {
+            onAuthNeeded? { [weak self] in
+                guard let self else { return }
+                self.isAuthenticated = true
+                self.tableView.reloadData()          // reveal content
+                self.onPaste?(clip.content)
+            }
+            return
+        }
+        onPaste?(clip.content)
     }
 
     private func moveSelection(by delta: Int) {
@@ -269,6 +291,14 @@ final class SearchViewController: NSViewController {
         reload(query: searchField.stringValue)
         NotificationCenter.default.post(name: .clipStoreDidChange, object: nil)
     }
+
+    private func toggleSensitiveSelected() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < clips.count else { return }
+        let clip = clips[row]
+        ClipStore.shared.markSensitive(id: clip.id, sensitive: !clip.sensitive)
+        reload(query: searchField.stringValue)
+    }
 }
 
 // MARK: - NSTextFieldDelegate
@@ -287,7 +317,7 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView,
                    viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = ClipCellView()
-        cell.configure(with: clips[row])
+        cell.configure(with: clips[row], isAuthenticated: isAuthenticated)
         return cell
     }
 }
@@ -312,30 +342,25 @@ final class ClipCellView: NSView {
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
 
-        // App icon — small, rounded
-        appIcon.imageScaling      = .scaleProportionallyDown
-        appIcon.wantsLayer        = true
-        appIcon.layer?.cornerRadius = 4
+        appIcon.imageScaling         = .scaleProportionallyDown
+        appIcon.wantsLayer           = true
+        appIcon.layer?.cornerRadius  = 4
         appIcon.layer?.masksToBounds = true
 
-        // Content preview — line 1, normal weight
         preview.font                 = .systemFont(ofSize: 13, weight: .regular)
         preview.textColor            = .labelColor
         preview.lineBreakMode        = .byTruncatingTail
         preview.maximumNumberOfLines = 1
 
-        // Source app name — line 2, lighter
         subtitle.font                 = .systemFont(ofSize: 11)
         subtitle.textColor            = .tertiaryLabelColor
         subtitle.lineBreakMode        = .byTruncatingTail
         subtitle.maximumNumberOfLines = 1
 
-        // Timestamp — top-right
         timestamp.font      = .systemFont(ofSize: 11)
         timestamp.textColor = .secondaryLabelColor
         timestamp.alignment = .right
 
-        // Pin badge — bottom-right
         pinIcon.image            = NSImage(systemSymbolName: "pin.fill",
                                            accessibilityDescription: nil)
         pinIcon.contentTintColor = .systemOrange
@@ -344,37 +369,56 @@ final class ClipCellView: NSView {
         [appIcon, preview, subtitle, timestamp, pinIcon].forEach { addSubview($0) }
 
         NSLayoutConstraint.activate([
-            // App icon — left column, centered vertically
             appIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             appIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
             appIcon.widthAnchor.constraint(equalToConstant: 22),
             appIcon.heightAnchor.constraint(equalToConstant: 22),
 
-            // Timestamp — top-right
             timestamp.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             timestamp.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             timestamp.widthAnchor.constraint(equalToConstant: 68),
 
-            // Pin icon — bottom-right
             pinIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             pinIcon.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             pinIcon.widthAnchor.constraint(equalToConstant: 9),
             pinIcon.heightAnchor.constraint(equalToConstant: 11),
 
-            // Preview — top text line
             preview.leadingAnchor.constraint(equalTo: appIcon.trailingAnchor, constant: 10),
             preview.trailingAnchor.constraint(equalTo: timestamp.leadingAnchor, constant: -8),
             preview.topAnchor.constraint(equalTo: topAnchor, constant: 9),
 
-            // Subtitle — bottom text line
             subtitle.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
             subtitle.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
             subtitle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
         ])
     }
 
-    func configure(with clip: ClipStore.Clip) {
-        // Collapse newlines into a readable one-liner
+    func configure(with clip: ClipStore.Clip, isAuthenticated: Bool) {
+        // ── Sensitive + not yet authenticated → locked card ───────────────────
+        if clip.sensitive && !isAuthenticated {
+            appIcon.image            = NSImage(systemSymbolName: "lock.fill",
+                                               accessibilityDescription: nil)
+            appIcon.contentTintColor = .systemOrange
+            appIcon.layer?.cornerRadius = 0
+
+            preview.stringValue = "Sensitive"
+            preview.textColor   = .secondaryLabelColor
+            preview.font        = .systemFont(ofSize: 13, weight: .medium)
+
+            subtitle.stringValue = "↩ authenticate & paste   ⌘S to untag"
+            subtitle.textColor   = .tertiaryLabelColor
+
+            timestamp.stringValue = relativeTime(clip.ts)
+            pinIcon.isHidden      = true
+            return
+        }
+
+        // ── Normal clip ────────────────────────────────────────────────────────
+        appIcon.contentTintColor = nil     // clear any tint from locked state
+        appIcon.layer?.cornerRadius = 4
+        preview.textColor = .labelColor
+        preview.font      = .systemFont(ofSize: 13, weight: .regular)
+
         let oneLiner = clip.content
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -384,18 +428,27 @@ final class ClipCellView: NSView {
         timestamp.stringValue = relativeTime(clip.ts)
         pinIcon.isHidden      = !clip.pinned
 
-        // Source app icon + display name
-        if let bundleId = clip.source,
-           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+        // Sensitive badge even when authenticated (faint indicator)
+        if clip.sensitive {
+            subtitle.stringValue = "🔒  Sensitive"
+            subtitle.textColor   = .secondaryLabelColor
+            appIcon.image        = NSImage(systemSymbolName: "lock.fill",
+                                           accessibilityDescription: nil)
+            appIcon.contentTintColor = .tertiaryLabelColor
+            appIcon.layer?.cornerRadius = 0
+        } else if let bundleId = clip.source,
+                  let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
             appIcon.image = NSWorkspace.shared.icon(forFile: appURL.path)
             let info = Bundle(url: appURL)?.infoDictionary
             let name = info?["CFBundleDisplayName"] as? String
                     ?? info?["CFBundleName"] as? String
                     ?? bundleId
             subtitle.stringValue = name
+            subtitle.textColor   = .tertiaryLabelColor
         } else {
             appIcon.image        = nil
             subtitle.stringValue = clip.source ?? ""
+            subtitle.textColor   = .tertiaryLabelColor
         }
     }
 

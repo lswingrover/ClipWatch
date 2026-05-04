@@ -1,31 +1,40 @@
 import AppKit
+import LocalAuthentication
 
 // MARK: - PanelController
 //
 // Manages the floating search panel.
 //
+// Authentication:
+//   When "Require Touch ID" is enabled in Preferences, show() calls
+//   authenticateForPanel() before presenting the panel. On success,
+//   isAuthenticated = true and the panel opens with all content visible.
+//   On failure/cancel, the panel is not shown.
+//
+//   When secure mode is OFF, isAuthenticated starts false. Sensitive clips
+//   render as a lock card. Pressing ↩ on one calls onAuthNeeded, which
+//   triggers authenticateForClip(). On success, isAuthenticated flips true,
+//   the table reloads, and the paste fires.
+//
+//   isAuthenticated resets to false on every hide() so each invocation is clean.
+//
 // Focus strategy:
-//   NSApp.activate IS called so the panel reliably receives keyboard events.
-//   Before activating, the current frontmost app is captured in `previousApp`.
-//   When the user pastes OR dismisses with Esc, we re-activate `previousApp`
-//   so focus returns to the right text field.
+//   NSApp.activate is called so the panel reliably receives keyboard events.
+//   previousApp is captured before activating. On paste/dismiss, previousApp
+//   is re-activated before the synthetic ⌘V fires.
 //
-//   makeFirstResponder is attempted twice: once async after makeKeyAndOrderFront,
-//   and again when NSWindow.didBecomeKeyNotification fires. The notification path
-//   is the reliable one — by the time it fires, the window is definitely key and
-//   the field editor can be installed correctly.
-//
-// Dismiss strategy (belt-and-suspenders):
-//   1. Global mouse monitor — catches clicks anywhere outside the panel,
-//      including on the desktop where no app-switch occurs.
-//   2. NSApplication.didResignActiveNotification — catches switching to
-//      another app via Cmd-Tab, Dock click, etc.
+// Dismiss (belt-and-suspenders):
+//   1. Global mouse monitor — clicks anywhere outside the panel.
+//   2. NSApplication.didResignActiveNotification — Cmd-Tab, Dock, etc.
 
 final class PanelController {
     private var panel:        NSPanel?
     private var searchVC:     SearchViewController?
-    private var clickMonitor: Any?                   // global mouse-down monitor
-    private var previousApp:  NSRunningApplication?  // app that owned focus before panel
+    private var clickMonitor: Any?
+    private var previousApp:  NSRunningApplication?
+
+    /// True once the user has authenticated this panel session.
+    private(set) var isAuthenticated = false
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -35,25 +44,13 @@ final class PanelController {
 
     func show() {
         if panel == nil { buildPanel() }
-
-        // Snapshot whoever has focus RIGHT NOW before we steal it.
         previousApp = NSWorkspace.shared.frontmostApplication
 
-        position()
-        panel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-
-        // First attempt — may still be in flight when NSApp.activate is settling.
-        // The didBecomeKeyNotification handler below is the reliable backstop.
-        DispatchQueue.main.async { [weak self] in
-            self?.searchVC?.prepareForDisplay()
-        }
-
-        // Global click monitor: any mouse-down outside the panel → dismiss
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        ) { [weak self] _ in
-            self?.hide()
+        if Prefs.isSecureModeEnabled() {
+            authenticateForPanel()
+        } else {
+            isAuthenticated = false
+            presentPanel()
         }
     }
 
@@ -61,6 +58,68 @@ final class PanelController {
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
         panel?.orderOut(nil)
         searchVC?.reset()
+        isAuthenticated = false   // reset — next open starts fresh
+    }
+
+    // MARK: - Authentication
+
+    private func authenticateForPanel() {
+        let ctx = LAContext()
+        var err: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+            // LocalAuthentication unavailable — allow through gracefully.
+            isAuthenticated = true
+            presentPanel()
+            return
+        }
+        ctx.evaluatePolicy(
+            .deviceOwnerAuthentication,
+            localizedReason: "Unlock ClipWatch clipboard history"
+        ) { [weak self] success, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if success {
+                    self.isAuthenticated = true
+                    self.presentPanel()
+                }
+                // Failure/cancel: panel stays hidden, no error shown.
+            }
+        }
+    }
+
+    /// Called when the user presses ↩ on a sensitive clip while not authenticated.
+    func authenticateForClip(completion: @escaping (Bool) -> Void) {
+        let ctx = LAContext()
+        var err: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+            completion(true)
+            return
+        }
+        ctx.evaluatePolicy(
+            .deviceOwnerAuthentication,
+            localizedReason: "View sensitive clipboard item"
+        ) { success, _ in
+            DispatchQueue.main.async { completion(success) }
+        }
+    }
+
+    // MARK: - Present
+
+    private func presentPanel() {
+        position()
+        panel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let auth = isAuthenticated
+        DispatchQueue.main.async { [weak self] in
+            self?.searchVC?.prepareForDisplay(isAuthenticated: auth)
+        }
+
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            self?.hide()
+        }
     }
 
     // MARK: - Build
@@ -72,7 +131,6 @@ final class PanelController {
             guard let self else { return }
             let target = self.previousApp
             self.hide()
-            // Re-activate the previous app first, then fire ⌘V into it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 target?.activate(options: .activateIgnoringOtherApps)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
@@ -85,9 +143,19 @@ final class PanelController {
             guard let self else { return }
             let target = self.previousApp
             self.hide()
-            // Return focus to wherever the user was before invoking the panel.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 target?.activate(options: .activateIgnoringOtherApps)
+            }
+        }
+
+        // Clip-level auth: called when the user tries to paste a sensitive clip
+        // without having authenticated the session.
+        vc.onAuthNeeded = { [weak self] completion in
+            self?.authenticateForClip { success in
+                if success {
+                    self?.isAuthenticated = true
+                    completion()
+                }
             }
         }
 
@@ -107,7 +175,6 @@ final class PanelController {
         p.hidesOnDeactivate     = false
         p.isMovableByWindowBackground = true
 
-        // Reliable focus: fire makeFirstResponder once the window is actually key.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowDidBecomeKey),
@@ -115,7 +182,6 @@ final class PanelController {
             object: p
         )
 
-        // Dismiss when another app activates (Cmd-Tab, Dock click, etc.)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(appDeactivated),
@@ -125,12 +191,8 @@ final class PanelController {
         panel = p
     }
 
-    /// Called when the panel is definitely the key window — safe to focus the search field.
-    @objc private func windowDidBecomeKey() {
-        searchVC?.focusSearchField()
-    }
-
-    @objc private func appDeactivated() { hide() }
+    @objc private func windowDidBecomeKey() { searchVC?.focusSearchField() }
+    @objc private func appDeactivated()     { hide() }
 
     // MARK: - Positioning
 

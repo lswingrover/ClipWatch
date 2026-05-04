@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ClipWatch",
-            path: "Sources/ClipWatch"
+            path: "Sources/ClipWatch",
+            linkerSettings: [.linkedFramework("LocalAuthentication")]
         )
     ]
 )
