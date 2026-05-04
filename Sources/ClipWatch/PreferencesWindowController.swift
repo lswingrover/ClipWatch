@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         win.title = "ClipWatch Preferences"
         win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         win.setContentSize(NSSize(width: 560, height: 500))
-        win.minSize = NSSize(width: 480, height: 430)
+        win.minSize = NSSize(width: 460, height: 400)
         win.center()
         super.init(window: win)
         win.delegate = self
@@ -20,16 +20,21 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError() }
 
     func windowWillClose(_ notification: Notification) {
-        // Re-register hotkey in case user changed it
         NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
     }
 }
 
 // MARK: - PreferencesViewController
+//
+// Full Auto Layout implementation:
+//   • All fixed controls live in a vertical NSStackView pinned to the top.
+//   • The excluded-apps scroll view is pinned to the bottom of the controls
+//     stack and to the bottom of the view, so it expands and contracts as the
+//     window is resized.
+//   • The +/− buttons sit at the bottom-trailing corner of the view.
 
 final class PreferencesViewController: NSViewController {
 
-    // Controls
     private var shortcutField:    ShortcutRecorderField!
     private var menuCountStepper: NSStepper!
     private var menuCountLabel:   NSTextField!
@@ -40,153 +45,168 @@ final class PreferencesViewController: NSViewController {
     private var excludedTable:    NSTableView!
     private var excludedList:     [String] = []
 
+    private let margin: CGFloat       = 20
+    private let labelWidth: CGFloat   = 180
+
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 500))
+        view = NSView()
         buildUI()
         loadValues()
     }
 
-    // MARK: - UI Construction
+    // MARK: - UI construction
 
     private func buildUI() {
-        var y: CGFloat = 390
+        // ── Top controls stack ────────────────────────────────────────────────
+        let controlsStack = NSStackView()
+        controlsStack.translatesAutoresizingMaskIntoConstraints = false
+        controlsStack.orientation = .vertical
+        controlsStack.alignment   = .leading
+        controlsStack.spacing     = 8
+        view.addSubview(controlsStack)
 
-        func label(_ text: String, bold: Bool = false) -> NSTextField {
-            let f = NSTextField(labelWithString: text)
-            f.font = bold ? .boldSystemFont(ofSize: 13) : .systemFont(ofSize: 13)
-            return f
-        }
+        // Hotkey
+        controlsStack.addArrangedSubview(sectionHeader("Hotkey"))
+        shortcutField = ShortcutRecorderField(frame: .zero)
+        shortcutField.translatesAutoresizingMaskIntoConstraints = false
+        shortcutField.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        shortcutField.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        controlsStack.addArrangedSubview(makeRow("Open panel", shortcutField))
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
-        func addRow(title: NSTextField, control: NSView, atY: inout CGFloat) {
-            title.frame = NSRect(x: 20, y: atY, width: 160, height: 20)
-            control.frame.origin = NSPoint(x: 190, y: atY)
-            view.addSubview(title)
-            view.addSubview(control)
-            atY -= 36
-        }
-
-        // ── Hotkey ──────────────────────────────────────────────────────────
-        let sectionHotkey = label("Hotkey", bold: true)
-        sectionHotkey.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        view.addSubview(sectionHotkey)
-        y -= 28
-
-        shortcutField = ShortcutRecorderField(frame: NSRect(x: 190, y: y, width: 180, height: 24))
-        view.addSubview(label("Open panel"))
-        view.subviews.last!.frame = NSRect(x: 20, y: y, width: 160, height: 20)
-        view.addSubview(shortcutField)
-        y -= 36
-
-        // ── Menu ────────────────────────────────────────────────────────────
-        let sectionMenu = label("Menu", bold: true)
-        sectionMenu.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        view.addSubview(sectionMenu)
-        y -= 28
-
-        let stepperRow = NSStackView()
-        stepperRow.orientation = .horizontal
-        stepperRow.spacing = 6
-        menuCountLabel = NSTextField(labelWithString: "10")
-        menuCountLabel.frame = NSRect(x: 0, y: 0, width: 28, height: 20)
-        menuCountStepper = NSStepper(frame: NSRect(x: 0, y: 0, width: 19, height: 24))
-        menuCountStepper.minValue = 5
-        menuCountStepper.maxValue = 25
+        // Menu
+        controlsStack.addArrangedSubview(sectionHeader("Menu"))
+        menuCountLabel   = NSTextField(labelWithString: "10")
+        menuCountStepper = NSStepper()
+        menuCountStepper.minValue = 5; menuCountStepper.maxValue = 25
         menuCountStepper.increment = 1
-        menuCountStepper.target = self
-        menuCountStepper.action = #selector(stepperChanged)
-        stepperRow.addArrangedSubview(menuCountLabel)
-        stepperRow.addArrangedSubview(menuCountStepper)
-        stepperRow.frame = NSRect(x: 190, y: y, width: 80, height: 24)
+        menuCountStepper.target = self; menuCountStepper.action = #selector(stepperChanged)
+        let stepperStack = NSStackView(views: [menuCountLabel, menuCountStepper])
+        stepperStack.orientation = .horizontal; stepperStack.spacing = 4
+        controlsStack.addArrangedSubview(makeRow("Recent items in menu", stepperStack))
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
-        view.addSubview(label("Recent items in menu"))
-        view.subviews.last!.frame = NSRect(x: 20, y: y, width: 160, height: 20)
-        view.addSubview(stepperRow)
-        y -= 36
-
-        // ── History ─────────────────────────────────────────────────────────
-        let sectionHistory = label("History", bold: true)
-        sectionHistory.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        view.addSubview(sectionHistory)
-        y -= 28
-
+        // History
+        controlsStack.addArrangedSubview(sectionHeader("History"))
         retentionLabel = NSTextField(labelWithString: "365 days")
-        retentionLabel.frame = NSRect(x: 20, y: y, width: 80, height: 20)
-        retentionSlider = NSSlider(frame: NSRect(x: 110, y: y, width: 220, height: 20))
-        retentionSlider.minValue = 30
-        retentionSlider.maxValue = 730
-        retentionSlider.numberOfTickMarks = 0
-        retentionSlider.allowsTickMarkValuesOnly = false
-        retentionSlider.target = self
-        retentionSlider.action = #selector(sliderChanged)
-        view.addSubview(retentionLabel)
-        view.addSubview(retentionSlider)
-        y -= 36
+        retentionLabel.translatesAutoresizingMaskIntoConstraints = false
+        retentionLabel.widthAnchor.constraint(equalToConstant: labelWidth).isActive = true
+        retentionSlider = NSSlider()
+        retentionSlider.minValue = 30; retentionSlider.maxValue = 730
+        retentionSlider.target = self; retentionSlider.action = #selector(sliderChanged)
+        retentionSlider.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        controlsStack.addArrangedSubview(makeRow(retentionLabel, retentionSlider))
 
-        // ── Screen ──────────────────────────────────────────────────────────
-        let sectionScreen = label("Panel appears on", bold: false)
-        sectionScreen.frame = NSRect(x: 20, y: y, width: 160, height: 20)
-        view.addSubview(sectionScreen)
-
+        // Panel screen
         screenSegment = NSSegmentedControl(
             labels: ["Active App", "Cursor"],
             trackingMode: .selectOne,
             target: self,
             action: #selector(screenModeChanged)
         )
-        screenSegment.frame = NSRect(x: 190, y: y - 2, width: 240, height: 24)
-        view.addSubview(screenSegment)
-        y -= 36
+        controlsStack.addArrangedSubview(makeRow("Panel appears on", screenSegment))
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
-        // ── Login ───────────────────────────────────────────────────────────
+        // Login at login
         loginToggle = NSButton(checkboxWithTitle: "Launch ClipWatch at login",
                                target: self, action: #selector(loginToggled))
-        loginToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
-        view.addSubview(loginToggle)
-        y -= 44
+        controlsStack.addArrangedSubview(loginToggle)
+        controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
 
-        // ── Excluded apps ────────────────────────────────────────────────────
-        let sectionExcl = label("Never capture from these apps", bold: true)
-        sectionExcl.frame = NSRect(x: 20, y: y, width: 320, height: 20)
-        view.addSubview(sectionExcl)
-        y -= 28
+        // Excluded apps header (last item in fixed stack)
+        controlsStack.addArrangedSubview(sectionHeader("Never capture from these apps"))
 
-        excludedTable = NSTableView(frame: .zero)
-        excludedTable.headerView = nil
-        excludedTable.rowHeight = 18
+        // ── Excluded apps scroll view (expands with window) ───────────────────
+        excludedTable = NSTableView()
+        excludedTable.headerView    = nil
+        excludedTable.rowHeight     = 18
         excludedTable.focusRingType = .none
         let exCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("bundleID"))
         exCol.isEditable = false
         excludedTable.addTableColumn(exCol)
-        excludedTable.delegate = self
+        excludedTable.delegate   = self
         excludedTable.dataSource = self
 
-        let exScroll = NSScrollView(frame: NSRect(x: 20, y: y - 80, width: 300, height: 80))
-        exScroll.documentView = excludedTable
+        let exScroll = NSScrollView()
+        exScroll.translatesAutoresizingMaskIntoConstraints = false
+        exScroll.documentView        = excludedTable
         exScroll.hasVerticalScroller = true
-        exScroll.borderType = .bezelBorder
+        exScroll.borderType          = .bezelBorder
         view.addSubview(exScroll)
 
+        // ── +/− buttons ───────────────────────────────────────────────────────
         let addBtn = NSButton(title: "+", target: self, action: #selector(addExcluded))
-        addBtn.frame = NSRect(x: 326, y: y - 56, width: 24, height: 24)
         addBtn.bezelStyle = .regularSquare
         let remBtn = NSButton(title: "−", target: self, action: #selector(removeExcluded))
-        remBtn.frame = NSRect(x: 356, y: y - 56, width: 24, height: 24)
         remBtn.bezelStyle = .regularSquare
-        view.addSubview(addBtn)
-        view.addSubview(remBtn)
+        let btnRow = NSStackView(views: [addBtn, remBtn])
+        btnRow.translatesAutoresizingMaskIntoConstraints = false
+        btnRow.orientation = .horizontal
+        btnRow.spacing = 4
+        view.addSubview(btnRow)
+
+        // ── Constraints ───────────────────────────────────────────────────────
+        NSLayoutConstraint.activate([
+            // Controls stack: flush to top-left, full width
+            controlsStack.topAnchor.constraint(equalTo: view.topAnchor, constant: margin),
+            controlsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
+            controlsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
+
+            // Scroll view: below controls, fills remaining height
+            exScroll.topAnchor.constraint(equalTo: controlsStack.bottomAnchor, constant: 8),
+            exScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
+            exScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
+            exScroll.bottomAnchor.constraint(equalTo: btnRow.topAnchor, constant: -6),
+
+            // Buttons: bottom-trailing corner
+            btnRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
+            btnRow.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -margin),
+        ])
     }
 
-    // MARK: - Load / Save Values
+    // MARK: - Layout helpers
+
+    private func sectionHeader(_ text: String) -> NSTextField {
+        let f = NSTextField(labelWithString: text)
+        f.font = .boldSystemFont(ofSize: 13)
+        f.translatesAutoresizingMaskIntoConstraints = false
+        return f
+    }
+
+    /// Two-column row: fixed-width string label on the left, control on the right.
+    private func makeRow(_ labelText: String, _ control: NSView) -> NSView {
+        let label = NSTextField(labelWithString: labelText)
+        label.font = .systemFont(ofSize: 13)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(equalToConstant: labelWidth).isActive = true
+        return makeRow(label, control)
+    }
+
+    /// Two-column row: arbitrary left view + control on the right.
+    private func makeRow(_ left: NSView, _ right: NSView) -> NSView {
+        left.translatesAutoresizingMaskIntoConstraints  = false
+        right.translatesAutoresizingMaskIntoConstraints = false
+        right.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let stack = NSStackView(views: [left, right])
+        stack.orientation  = .horizontal
+        stack.alignment    = .centerY
+        stack.spacing      = 12
+        stack.distribution = .fill
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    // MARK: - Load / Save values
 
     private func loadValues() {
         shortcutField.loadFromDefaults()
 
         let count = Prefs.menuCount()
-        menuCountStepper.intValue = Int32(count)
+        menuCountStepper.intValue  = Int32(count)
         menuCountLabel.stringValue = "\(count)"
 
         let days = UserDefaults.standard.integer(forKey: Prefs.retentionDays)
-        retentionSlider.intValue = Int32(days > 0 ? days : 365)
+        retentionSlider.intValue   = Int32(days > 0 ? days : 365)
         retentionLabel.stringValue = "\(retentionSlider.intValue) days"
 
         screenSegment.selectedSegment = Prefs.screenMode() == "cursor" ? 1 : 0
@@ -236,7 +256,7 @@ final class PreferencesViewController: NSViewController {
 
     @objc private func addExcluded() {
         let alert = NSAlert()
-        alert.messageText    = "Add excluded app"
+        alert.messageText     = "Add excluded app"
         alert.informativeText = "Enter the bundle identifier (e.g. com.apple.Safari):"
         alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
@@ -305,8 +325,8 @@ final class ShortcutRecorderField: NSControl {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius   = 5
-        layer?.borderWidth    = 1
+        layer?.cornerRadius    = 5
+        layer?.borderWidth     = 1
         applyBorderColor()
         layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
     }
@@ -382,7 +402,7 @@ final class ShortcutRecorderField: NSControl {
         guard !mods.isEmpty else { return }
 
         let kc = Int(event.keyCode)
-        UserDefaults.standard.set(kc,             forKey: Prefs.hotkeyKeyCode)
+        UserDefaults.standard.set(kc,                 forKey: Prefs.hotkeyKeyCode)
         UserDefaults.standard.set(Int(mods.rawValue), forKey: Prefs.hotkeyModifiers)
         needsDisplay = true
         NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
