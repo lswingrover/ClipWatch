@@ -10,8 +10,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         let vc = PreferencesViewController()
         let win = NSWindow(contentViewController: vc)
         win.title = "ClipWatch Preferences"
-        win.styleMask = [.titled, .closable, .miniaturizable]
-        win.setContentSize(NSSize(width: 480, height: 430))
+        win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        win.setContentSize(NSSize(width: 560, height: 500))
+        win.minSize = NSSize(width: 480, height: 430)
         win.center()
         super.init(window: win)
         win.delegate = self
@@ -40,7 +41,7 @@ final class PreferencesViewController: NSViewController {
     private var excludedList:     [String] = []
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 430))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 500))
         buildUI()
         loadValues()
     }
@@ -127,7 +128,7 @@ final class PreferencesViewController: NSViewController {
         view.addSubview(sectionScreen)
 
         screenSegment = NSSegmentedControl(
-            labels: ["Active app's screen", "Screen with cursor"],
+            labels: ["Active App", "Cursor"],
             trackingMode: .selectOne,
             target: self,
             action: #selector(screenModeChanged)
