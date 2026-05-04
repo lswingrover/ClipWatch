@@ -107,14 +107,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Paste
 
-    /// Places `content` on the clipboard, then simulates ⌘V so it pastes
-    /// into whatever app had focus before ClipWatch was invoked.
+    /// Places `content` on the general pasteboard, then posts a synthetic ⌘V
+    /// `CGEvent` to the HID event tap so it pastes into whatever app was
+    /// frontmost before ClipWatch was invoked.
+    ///
+    /// Call sites must ensure a delay of ≥120 ms has elapsed since the panel
+    /// or menu was dismissed. Without the delay, ClipWatch's window may still
+    /// own focus when the event fires and ⌘V pastes into nothing.
+    ///
+    /// This requires Accessibility permission (`AXIsProcessTrusted()`).
+    /// HotkeyManager prompts for it on launch; if the user never grants it,
+    /// the content is still written to the pasteboard — the user just has to
+    /// press ⌘V themselves.
     func paste(_ content: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(content, forType: .string)
 
         let src     = CGEventSource(stateID: .combinedSessionState)
-        let vKey: CGKeyCode = 9   // kVK_ANSI_V
+        let vKey: CGKeyCode = 9   // kVK_ANSI_V  (Carbon virtual key code for V)
         guard
             let down = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true),
             let up   = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: false)
@@ -122,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         down.flags = .maskCommand
         up.flags   = .maskCommand
+        // cghidEventTap injects into the hardware event stream, reaching the
+        // frontmost app without going through the event tap filter chain.
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
     }

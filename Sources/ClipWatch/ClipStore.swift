@@ -2,6 +2,23 @@ import Foundation
 import SQLite3
 
 // MARK: - ClipStore
+//
+// Persistent store for clipboard history. All operations are synchronous and
+// called from the main thread (ClipboardMonitor and the UI both run there).
+//
+// Storage path: ~/Library/Application Support/ClipWatch/clips.db
+//
+// Schema overview:
+//   clips      — canonical table: id, content TEXT, ts INTEGER (unix), pinned INTEGER, source TEXT
+//   clips_fts  — FTS5 virtual table, content-backed by clips, kept in sync via triggers
+//
+// FTS5 ships with the macOS system libsqlite3. No extra installation.
+// Prefix search is enabled by wrapping the query term in quotes and appending '*':
+//   e.g. searching "hel" becomes `"hel"*` which matches "hello", "help", etc.
+//
+// SQLITE_TRANSIENT (-1 cast to destructor type) tells SQLite to copy the string
+// immediately. Without it, SQLite holds a pointer to Swift-managed memory that
+// may be freed before SQLite uses it — a hard-to-reproduce crash.
 
 final class ClipStore {
     static let shared = ClipStore()
@@ -11,7 +28,7 @@ final class ClipStore {
         let content: String
         let ts: Date
         let pinned: Bool
-        let source: String?
+        let source: String?  // bundle ID of the app that owned the clipboard at copy time
     }
 
     private var db: OpaquePointer?
@@ -39,6 +56,12 @@ final class ClipStore {
     }
 
     private func createSchema() {
+        // clips_fts is a "content table" FTS5 index: it stores no data itself,
+        // instead reading from `clips` on demand. The triggers keep the index
+        // in sync with inserts, deletes, and updates to the canonical table.
+        // Dropping and recreating clips without rebuilding clips_fts will cause
+        // stale results — if you ever do a schema migration that touches clips,
+        // run `INSERT INTO clips_fts(clips_fts) VALUES('rebuild')` afterward.
         let sql = """
         CREATE TABLE IF NOT EXISTS clips (
             id      INTEGER PRIMARY KEY AUTOINCREMENT,

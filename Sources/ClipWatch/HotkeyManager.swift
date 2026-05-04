@@ -1,8 +1,24 @@
 import AppKit
 
 // MARK: - HotkeyManager
-// Monitors global key events via NSEvent. Requires Accessibility permission.
-// If permission is not granted, prompts the user and does not crash.
+//
+// Detects the configured global hotkey using NSEvent.addGlobalMonitorForEvents.
+//
+// Accessibility permission requirement:
+//   Apple requires Accessibility access for apps to monitor key events in OTHER
+//   applications. Without it, addGlobalMonitorForEvents returns nil and no
+//   events are delivered. The app degrades gracefully — clipboard capture and
+//   the menu bar still work; only the hotkey and auto-paste are disabled.
+//
+// Why not Carbon RegisterEventHotKey?
+//   Carbon hotkeys work without Accessibility, but the API is formally
+//   deprecated and Carbon itself is not guaranteed to survive future OS changes.
+//   NSEvent is the documented modern path.
+//
+// Modifier flag note:
+//   event.modifierFlags must be masked with .deviceIndependentFlagsMask before
+//   comparison. Without the mask, bits from capslock, numpad, and function keys
+//   leak in and cause false negatives on some keyboards.
 
 final class HotkeyManager {
     var onActivate: (() -> Void)?
