@@ -1,5 +1,16 @@
 import AppKit
+import UniformTypeIdentifiers
 import ServiceManagement
+
+// MARK: - ExclusionItem
+//
+// Unified model for the "Never capture from" list.
+// App entries store a bundle ID; URL entries store a domain/path pattern.
+
+enum ExclusionItem {
+    case app(bundleID: String)
+    case url(pattern: String)
+}
 
 // MARK: - PreferencesWindowController
 
@@ -11,8 +22,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         let win = NSWindow(contentViewController: vc)
         win.title = "ClipWatch Preferences"
         win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        win.setContentSize(NSSize(width: 560, height: 500))
-        win.minSize = NSSize(width: 460, height: 400)
+        win.setContentSize(NSSize(width: 560, height: 520))
+        win.minSize = NSSize(width: 460, height: 420)
         win.center()
         super.init(window: win)
         win.delegate = self
@@ -26,12 +37,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
 // MARK: - PreferencesViewController
 //
-// Full Auto Layout implementation:
-//   • All fixed controls live in a vertical NSStackView pinned to the top.
-//   • The excluded-apps scroll view is pinned to the bottom of the controls
-//     stack and to the bottom of the view, so it expands and contracts as the
-//     window is resized.
-//   • The +/− buttons sit at the bottom-trailing corner of the view.
+// Full Auto Layout:
+//   • All fixed controls in a vertical NSStackView pinned to the top.
+//   • Exclusion scroll view fills remaining height between controls and bottom buttons.
+//   • Drag .app bundles onto the table to add app exclusions.
+//   • + button → popup menu → "Add App…" (NSOpenPanel) or "Add URL or Domain…" (sheet).
 
 final class PreferencesViewController: NSViewController {
 
@@ -43,10 +53,10 @@ final class PreferencesViewController: NSViewController {
     private var screenSegment:    NSSegmentedControl!
     private var loginToggle:      NSButton!
     private var excludedTable:    NSTableView!
-    private var excludedList:     [String] = []
+    private var items:            [ExclusionItem] = []
 
-    private let margin: CGFloat       = 20
-    private let labelWidth: CGFloat   = 180
+    private let margin: CGFloat     = 20
+    private let labelWidth: CGFloat = 180
 
     override func loadView() {
         view = NSView()
@@ -57,7 +67,7 @@ final class PreferencesViewController: NSViewController {
     // MARK: - UI construction
 
     private func buildUI() {
-        // ── Top controls stack ────────────────────────────────────────────────
+        // ── Top controls stack ─────────────────────────────────────────────────
         let controlsStack = NSStackView()
         controlsStack.translatesAutoresizingMaskIntoConstraints = false
         controlsStack.orientation = .vertical
@@ -78,11 +88,14 @@ final class PreferencesViewController: NSViewController {
         controlsStack.addArrangedSubview(sectionHeader("Menu"))
         menuCountLabel   = NSTextField(labelWithString: "10")
         menuCountStepper = NSStepper()
-        menuCountStepper.minValue = 5; menuCountStepper.maxValue = 25
+        menuCountStepper.minValue  = 5
+        menuCountStepper.maxValue  = 25
         menuCountStepper.increment = 1
-        menuCountStepper.target = self; menuCountStepper.action = #selector(stepperChanged)
+        menuCountStepper.target    = self
+        menuCountStepper.action    = #selector(stepperChanged)
         let stepperStack = NSStackView(views: [menuCountLabel, menuCountStepper])
-        stepperStack.orientation = .horizontal; stepperStack.spacing = 4
+        stepperStack.orientation = .horizontal
+        stepperStack.spacing     = 4
         controlsStack.addArrangedSubview(makeRow("Recent items in menu", stepperStack))
         controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
@@ -92,8 +105,10 @@ final class PreferencesViewController: NSViewController {
         retentionLabel.translatesAutoresizingMaskIntoConstraints = false
         retentionLabel.widthAnchor.constraint(equalToConstant: labelWidth).isActive = true
         retentionSlider = NSSlider()
-        retentionSlider.minValue = 30; retentionSlider.maxValue = 730
-        retentionSlider.target = self; retentionSlider.action = #selector(sliderChanged)
+        retentionSlider.minValue = 30
+        retentionSlider.maxValue = 730
+        retentionSlider.target   = self
+        retentionSlider.action   = #selector(sliderChanged)
         retentionSlider.setContentHuggingPriority(.defaultLow, for: .horizontal)
         controlsStack.addArrangedSubview(makeRow(retentionLabel, retentionSlider))
 
@@ -107,25 +122,29 @@ final class PreferencesViewController: NSViewController {
         controlsStack.addArrangedSubview(makeRow("Panel appears on", screenSegment))
         controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
-        // Login at login
+        // Launch at login
         loginToggle = NSButton(checkboxWithTitle: "Launch ClipWatch at login",
                                target: self, action: #selector(loginToggled))
         controlsStack.addArrangedSubview(loginToggle)
         controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
 
-        // Excluded apps header (last item in fixed stack)
-        controlsStack.addArrangedSubview(sectionHeader("Never capture from these apps"))
+        // Exclusions header
+        controlsStack.addArrangedSubview(sectionHeader("Never capture from"))
 
-        // ── Excluded apps scroll view (expands with window) ───────────────────
+        // ── Exclusions table (expands with window) ─────────────────────────────
         excludedTable = NSTableView()
-        excludedTable.headerView    = nil
-        excludedTable.rowHeight     = 18
-        excludedTable.focusRingType = .none
-        let exCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("bundleID"))
+        excludedTable.headerView      = nil
+        excludedTable.rowHeight       = 22
+        excludedTable.focusRingType   = .none
+        excludedTable.intercellSpacing = NSSize(width: 0, height: 2)
+        let exCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
         exCol.isEditable = false
         excludedTable.addTableColumn(exCol)
         excludedTable.delegate   = self
         excludedTable.dataSource = self
+
+        // Accept .app drops from Finder / Dock
+        excludedTable.registerForDraggedTypes([.fileURL])
 
         let exScroll = NSScrollView()
         exScroll.translatesAutoresizingMaskIntoConstraints = false
@@ -134,8 +153,8 @@ final class PreferencesViewController: NSViewController {
         exScroll.borderType          = .bezelBorder
         view.addSubview(exScroll)
 
-        // ── +/− buttons ───────────────────────────────────────────────────────
-        let addBtn = NSButton(title: "+", target: self, action: #selector(addExcluded))
+        // ── +/− buttons ────────────────────────────────────────────────────────
+        let addBtn = NSButton(title: "+", target: self, action: #selector(addExcluded(_:)))
         addBtn.bezelStyle = .regularSquare
         let remBtn = NSButton(title: "−", target: self, action: #selector(removeExcluded))
         remBtn.bezelStyle = .regularSquare
@@ -145,14 +164,14 @@ final class PreferencesViewController: NSViewController {
         btnRow.spacing = 4
         view.addSubview(btnRow)
 
-        // ── Constraints ───────────────────────────────────────────────────────
+        // ── Constraints ────────────────────────────────────────────────────────
         NSLayoutConstraint.activate([
-            // Controls stack: flush to top-left, full width
+            // Controls stack: flush top-left, full width
             controlsStack.topAnchor.constraint(equalTo: view.topAnchor, constant: margin),
             controlsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             controlsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
 
-            // Scroll view: below controls, fills remaining height
+            // Scroll view: below controls, expands to fill remaining height
             exScroll.topAnchor.constraint(equalTo: controlsStack.bottomAnchor, constant: 8),
             exScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             exScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
@@ -173,7 +192,6 @@ final class PreferencesViewController: NSViewController {
         return f
     }
 
-    /// Two-column row: fixed-width string label on the left, control on the right.
     private func makeRow(_ labelText: String, _ control: NSView) -> NSView {
         let label = NSTextField(labelWithString: labelText)
         label.font = .systemFont(ofSize: 13)
@@ -182,7 +200,6 @@ final class PreferencesViewController: NSViewController {
         return makeRow(label, control)
     }
 
-    /// Two-column row: arbitrary left view + control on the right.
     private func makeRow(_ left: NSView, _ right: NSView) -> NSView {
         left.translatesAutoresizingMaskIntoConstraints  = false
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -196,7 +213,28 @@ final class PreferencesViewController: NSViewController {
         return stack
     }
 
-    // MARK: - Load / Save values
+    // MARK: - Data model
+
+    private func buildItems() {
+        let apps = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps) ?? Prefs.defaultExcludedApps
+        let urls = UserDefaults.standard.stringArray(forKey: Prefs.excludedURLs) ?? []
+        items = apps.map { .app(bundleID: $0) } + urls.map { .url(pattern: $0) }
+    }
+
+    private func saveItems() {
+        let apps = items.compactMap { item -> String? in
+            guard case .app(let bid) = item else { return nil }
+            return bid
+        }
+        let urls = items.compactMap { item -> String? in
+            guard case .url(let pat) = item else { return nil }
+            return pat
+        }
+        UserDefaults.standard.set(apps, forKey: Prefs.excludedApps)
+        UserDefaults.standard.set(urls, forKey: Prefs.excludedURLs)
+    }
+
+    // MARK: - Load values
 
     private func loadValues() {
         shortcutField.loadFromDefaults()
@@ -211,8 +249,7 @@ final class PreferencesViewController: NSViewController {
 
         screenSegment.selectedSegment = Prefs.screenMode() == "cursor" ? 1 : 0
 
-        excludedList = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps)
-            ?? Prefs.defaultExcludedApps
+        buildItems()
         excludedTable.reloadData()
 
         if #available(macOS 13.0, *) {
@@ -254,57 +291,208 @@ final class PreferencesViewController: NSViewController {
         }
     }
 
-    @objc private func addExcluded() {
+    /// Shows a popup menu with "Add App…" and "Add URL or Domain…".
+    @objc private func addExcluded(_ sender: NSButton) {
+        let menu = NSMenu()
+        let appItem = NSMenuItem(title: "Add App…",
+                                 action: #selector(addApp),
+                                 keyEquivalent: "")
+        appItem.target = self
+        let urlItem = NSMenuItem(title: "Add URL or Domain…",
+                                 action: #selector(addURLPattern),
+                                 keyEquivalent: "")
+        urlItem.target = self
+        menu.addItem(appItem)
+        menu.addItem(urlItem)
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: sender.bounds.minX, y: sender.bounds.maxY + 2),
+                   in: sender)
+    }
+
+    /// Opens an NSOpenPanel filtered to .app bundles.
+    @objc private func addApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes     = [.applicationBundle]
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles          = true
+        panel.canChooseDirectories    = false
+        panel.directoryURL            = URL(fileURLWithPath: "/Applications")
+        panel.prompt                  = "Exclude"
+        panel.message                 = "Choose apps to exclude from clipboard capture:"
+        guard let window = view.window else { return }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK else { return }
+            panel.urls.forEach { self?.addAppURL($0) }
+        }
+    }
+
+    /// Sheet for entering a domain/URL pattern.
+    @objc private func addURLPattern() {
         let alert = NSAlert()
-        alert.messageText     = "Add excluded app"
-        alert.informativeText = "Enter the bundle identifier (e.g. com.apple.Safari):"
+        alert.messageText     = "Add URL exclusion"
+        alert.informativeText = """
+            Enter a domain or URL pattern:
+
+            example.com          — all pages and subdomains
+            sub.example.com      — only that subdomain
+            example.com/path     — only that path and below
+            """
         alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.placeholderString = "example.com"
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let id = field.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !excludedList.contains(id) else { return }
-        excludedList.append(id)
-        saveExcluded()
-        excludedTable.reloadData()
+        guard let window = view.window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let pattern = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !pattern.isEmpty else { return }
+            self?.addURLPatternString(pattern)
+        }
     }
 
     @objc private func removeExcluded() {
         let row = excludedTable.selectedRow
-        guard row >= 0 else { return }
-        excludedList.remove(at: row)
-        saveExcluded()
+        guard row >= 0, row < items.count else { return }
+        items.remove(at: row)
+        saveItems()
         excludedTable.reloadData()
     }
 
-    private func saveExcluded() {
-        UserDefaults.standard.set(excludedList, forKey: Prefs.excludedApps)
+    // MARK: - Mutation helpers
+
+    private func addAppURL(_ url: URL) {
+        guard url.pathExtension == "app",
+              let bundle = Bundle(url: url),
+              let bid    = bundle.bundleIdentifier else { return }
+        addAppBundleID(bid)
+    }
+
+    func addAppBundleID(_ bid: String) {
+        let exists = items.contains { if case .app(let b) = $0 { return b == bid }; return false }
+        guard !exists else { return }
+        items.append(.app(bundleID: bid))
+        saveItems()
+        excludedTable.reloadData()
+    }
+
+    private func addURLPatternString(_ pattern: String) {
+        let exists = items.contains { if case .url(let p) = $0 { return p == pattern }; return false }
+        guard !exists else { return }
+        items.append(.url(pattern: pattern))
+        saveItems()
+        excludedTable.reloadData()
     }
 }
 
-// MARK: - Excluded apps table
+// MARK: - Table data source + delegate
 
 extension PreferencesViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { excludedList.count }
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
+
+    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
                    row: Int) -> NSView? {
-        let f = NSTextField(labelWithString: excludedList[row])
-        f.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        return f
+        makeCellView(for: items[row])
+    }
+
+    // MARK: Drag-to-add (.app bundles from Finder / Dock)
+
+    func tableView(_ tableView: NSTableView,
+                   validateDrop info: NSDraggingInfo,
+                   proposedRow row: Int,
+                   proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        tableView.setDropRow(-1, dropOperation: .on) // highlight whole table
+        let pb = info.draggingPasteboard
+        guard pb.canReadObject(forClasses: [NSURL.self], options: nil) else { return [] }
+        return .copy
+    }
+
+    func tableView(_ tableView: NSTableView,
+                   acceptDrop info: NSDraggingInfo,
+                   row: Int,
+                   dropOperation: NSTableView.DropOperation) -> Bool {
+        let pb = info.draggingPasteboard
+        guard let urls = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]
+        else { return false }
+        var added = false
+        for url in urls where url.pathExtension == "app" {
+            if let bundle = Bundle(url: url), let bid = bundle.bundleIdentifier {
+                addAppBundleID(bid)
+                added = true
+            }
+        }
+        return added
+    }
+
+    // MARK: Cell view
+
+    private func makeCellView(for item: ExclusionItem) -> NSView {
+        let container = NSView()
+        let icon  = NSImageView()
+        let label = NSTextField(labelWithString: "")
+
+        icon.translatesAutoresizingMaskIntoConstraints  = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        icon.imageScaling            = .scaleProportionallyDown
+        icon.wantsLayer              = true
+        icon.layer?.cornerRadius     = 3
+        icon.layer?.masksToBounds    = true
+
+        label.font          = .systemFont(ofSize: 12)
+        label.lineBreakMode = .byTruncatingTail
+
+        switch item {
+        case .app(let bundleID):
+            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                icon.image = NSWorkspace.shared.icon(forFile: appURL.path)
+                let info   = Bundle(url: appURL)?.infoDictionary
+                let name   = info?["CFBundleDisplayName"] as? String
+                          ?? info?["CFBundleName"] as? String
+                          ?? bundleID
+                label.stringValue = name
+            } else {
+                icon.image        = NSImage(systemSymbolName: "app.badge.questionmark",
+                                            accessibilityDescription: nil)
+                label.stringValue = bundleID
+                label.textColor   = .secondaryLabelColor
+            }
+
+        case .url(let pattern):
+            icon.image            = NSImage(systemSymbolName: "globe",
+                                            accessibilityDescription: nil)
+            icon.contentTintColor = .systemBlue
+            label.stringValue     = pattern
+        }
+
+        container.addSubview(icon)
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+            icon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        return container
     }
 }
 
 // MARK: - ShortcutRecorderField
 //
 // Custom NSControl (NOT NSTextField) so mouseDown and keyDown are delivered
-// directly without going through the field-editor machinery.
+// directly without the field-editor machinery.
 //
 // Usage:
-//   1. Click the control — it enters recording mode (accent border, prompt text)
-//   2. Press any key combo with at least one modifier — saves and exits recording
-//   3. Press Esc without a modifier — cancels recording without changing the hotkey
+//   1. Click — enters recording mode (accent border, prompt text)
+//   2. Press any combo with ≥ 1 modifier — saves and exits
+//   3. Esc with no modifier — cancels without changing hotkey
 
 final class ShortcutRecorderField: NSControl {
 
@@ -334,7 +522,7 @@ final class ShortcutRecorderField: NSControl {
 
     func loadFromDefaults() { needsDisplay = true }
 
-    // MARK: - Drawing
+    // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -359,7 +547,7 @@ final class ShortcutRecorderField: NSControl {
                            y: (bounds.height - sz.height) / 2))
     }
 
-    // MARK: - Focus
+    // MARK: Focus
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -387,18 +575,18 @@ final class ShortcutRecorderField: NSControl {
             : NSColor.separatorColor).cgColor
     }
 
-    // MARK: - Key capture
+    // MARK: Key capture
 
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         // Esc with no modifier = cancel
-        if event.keyCode == 53 && mods.isEmpty {
+        if event.keyCode == 53, mods.isEmpty {
             window?.makeFirstResponder(nil)
             return
         }
 
-        // Require at least one modifier so bare letter keys are ignored
+        // Require at least one modifier
         guard !mods.isEmpty else { return }
 
         let kc = Int(event.keyCode)
@@ -409,7 +597,7 @@ final class ShortcutRecorderField: NSControl {
         window?.makeFirstResponder(nil)
     }
 
-    // MARK: - Formatting
+    // MARK: Formatting
 
     private func describe(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String {
         var s = ""

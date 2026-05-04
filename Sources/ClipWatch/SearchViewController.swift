@@ -201,6 +201,15 @@ final class SearchViewController: NSViewController {
     /// Returns nil to consume the event; returns the event to let it fall through.
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Hotkey re-press while panel is visible → toggle dismiss
+        let hkKey  = Prefs.hotkeyVirtualKey()
+        let hkMods = Prefs.hotkeyModifierFlags()
+        if Int(event.keyCode) == hkKey, Int(mods.rawValue) == hkMods {
+            onDismiss?()
+            return nil
+        }
+
         switch event.keyCode {
         case 125: moveSelection(by: 1);  return nil         // ↓
         case 126: moveSelection(by: -1); return nil         // ↑

@@ -9,6 +9,7 @@ enum Prefs {
     static let retentionDays   = "retentionDays"    // Int  (default 365)
     static let screenFocusMode = "screenFocusMode"  // String "activeApp" | "cursor"
     static let excludedApps    = "excludedApps"     // [String] bundle IDs
+    static let excludedURLs    = "excludedURLs"     // [String] domain/URL patterns
     static let launchAtLogin   = "launchAtLogin"    // Bool
 
     static let defaultExcludedApps: [String] = [
