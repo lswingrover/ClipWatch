@@ -1,0 +1,67 @@
+# Changelog
+
+All notable changes to ClipWatch are documented here.  
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+---
+
+## [Unreleased]
+
+---
+
+## [1.3.0] — 2026-04-20
+
+### Added
+- **Auto-update checker** — polls `api.github.com/repos/lswingrover/ClipWatch/releases/latest` once per launch; fires a macOS notification and shows an **"⬆ Update available: vX.X.X"** item at the top of the menu bar dropdown when a newer version is available
+- **`UpdateChecker.swift`** — `@MainActor ObservableObject` with semver integer comparison, system notification delivery, and one-shot launch check (no background timer)
+
+---
+
+## [1.2.0] — 2026-04-10
+
+### Added
+- **Secure mode** — Preferences → Security → *Require Touch ID to open panel*: locks the entire panel behind biometric auth; no clips visible until authenticated
+- **Unlock window** — configurable stay-unlocked duration after one Touch ID: Every use / 5 min / 15 min / 30 min / 1 hour / Until restart
+- **Security section in Preferences** — unlock window picker + secure mode toggle
+
+### Changed
+- `PanelController` Touch ID gate now respects unlock window: a single successful auth unlocks all subsequent sensitive clip pastes until the window expires
+- Closing the panel no longer resets the unlock window (correct behavior for multi-key workflows)
+
+---
+
+## [1.1.0] — 2026-03-28
+
+### Added
+- **Sensitive clip auto-detection** — `SensitiveDetector.swift` scans every new clip against 11 `NSRegularExpression` pattern classes: AWS access keys, generic API keys, credit card numbers (Luhn-valid), SSNs, PEM private keys, JWT tokens, GitHub PATs, generic `password=` assignments, Slack tokens, Stripe keys, database connection strings
+- **Touch ID gate for sensitive clips** — sensitive clips render as `••••••••` in the panel; paste requires `LAContext.evaluatePolicy(.deviceOwnerAuthentication)` (Touch ID or Mac login password); uses the Secure Enclave on Apple Silicon
+- **⌘S shortcut** — manually mark/unmark any clip as sensitive from the panel
+- **`sensitive` column** in SQLite `clips` table — set at insert time; content stored as-is, never displayed without auth
+
+### Changed
+- `ClipStore.insert()` calls `SensitiveDetector.isSensitive(_:)` synchronously before writing; flagged clips write with `sensitive = 1`
+- `ClipCellView` shows a lock icon on sensitive rows
+
+---
+
+## [1.0.0] — 2026-03-15
+
+### Added
+- Initial release — clipboard history manager for macOS 13+
+- `NSPasteboard.general.changeCount` polling at 500 ms (only approach available — no push API on macOS)
+- Plain-text-only storage — RTF/HTML stripped at insert time
+- SQLite database with FTS5 full-text search (`clips_fts` virtual table, content-table triggers)
+- Floating `NSPanel` search interface (non-activating — target app keeps focus)
+- `⌥⌘V` global hotkey via `NSEvent.addGlobalMonitorForEvents`; requires Accessibility permission
+- Type-to-filter, arrow-key navigation, Enter-to-paste, Esc-to-dismiss
+- Paste via `CGEvent` to `cghidEventTap` — posts synthetic `⌘V` to the hardware-level HID event stream so the keystroke reaches the frontmost app directly; 150 ms delay after panel dismiss ensures focus transfer completes
+- Pin items to top with `⌘P`
+- Delete items with `⌘⌫`
+- Menu bar status item (📋) with configurable recent-clip dropdown (5–25 items)
+- App and URL exclusion list — filtered at insert time (excluded content never touches the database); pre-seeded with 1Password, Bitwarden, LastPass; URL-level exclusion via `AXUIElement` browser tab reading
+- Preferences: hotkey recorder, menu item count, retention days (30–730), screen mode (active app / cursor), launch at login
+- Data management: Clear All History with confirmation
+- `~/Library/Application Support/ClipWatch/clips.db` — WAL journal mode; pruned on launch (retention limit + 50,000 unpinned cap)
+- `build_app.sh` — one-shot compile → bundle → sign → install to `~/Applications/ClipWatch.app` → launch
+- `make_icon.swift` — programmatic app icon via AppKit + iconutil
+- Ad-hoc code signing and LaunchServices registration for Dock presence
