@@ -276,8 +276,16 @@ extension PreferencesViewController: NSTableViewDataSource, NSTableViewDelegate 
 }
 
 // MARK: - ShortcutRecorderField
+//
+// Custom NSControl (NOT NSTextField) so mouseDown and keyDown are delivered
+// directly without going through the field-editor machinery.
+//
+// Usage:
+//   1. Click the control — it enters recording mode (accent border, prompt text)
+//   2. Press any key combo with at least one modifier — saves and exits recording
+//   3. Press Esc without a modifier — cancels recording without changing the hotkey
 
-final class ShortcutRecorderField: NSTextField {
+final class ShortcutRecorderField: NSControl {
 
     private let keyNames: [Int: String] = [
         0:"A",1:"S",2:"D",3:"F",4:"H",5:"G",6:"Z",7:"X",8:"C",9:"V",
@@ -285,59 +293,110 @@ final class ShortcutRecorderField: NSTextField {
         31:"O",32:"U",34:"I",35:"P",37:"L",38:"J",40:"K",45:"N",46:"M",
         18:"1",19:"2",20:"3",21:"4",22:"6",23:"5",25:"9",26:"7",28:"8",29:"0",
         47:".",44:"/",27:"-",24:"=",33:"[",30:"]",
-        48:"Tab",49:"Space",36:"Return",51:"Delete",53:"Esc",
+        48:"Tab",49:"Space",36:"↩",51:"⌫",53:"Esc",
         123:"←",124:"→",125:"↓",126:"↑",
     ]
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        isBordered = true
-        isBezeled  = true
-        bezelStyle = .roundedBezel
-        isEditable = false
-        isSelectable = false
-        alignment  = .center
-        placeholderString = "Click to record…"
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    func loadFromDefaults() {
-        let kc   = Prefs.hotkeyVirtualKey()
-        let mods = NSEvent.ModifierFlags(rawValue: UInt(Prefs.hotkeyModifierFlags()))
-        stringValue = describe(keyCode: kc, modifiers: mods)
-    }
+    private var isRecording = false
 
     override var acceptsFirstResponder: Bool { true }
 
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius   = 5
+        layer?.borderWidth    = 1
+        applyBorderColor()
+        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func loadFromDefaults() { needsDisplay = true }
+
+    // MARK: - Drawing
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let text: String
+        let color: NSColor
+        if isRecording {
+            text  = "Press shortcut…"
+            color = .secondaryLabelColor
+        } else {
+            let kc   = Prefs.hotkeyVirtualKey()
+            let mods = NSEvent.ModifierFlags(rawValue: UInt(Prefs.hotkeyModifierFlags()))
+            text  = describe(keyCode: kc, modifiers: mods)
+            color = .labelColor
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font:            NSFont.systemFont(ofSize: 13),
+            .foregroundColor: color,
+        ]
+        let s  = NSAttributedString(string: text, attributes: attrs)
+        let sz = s.size()
+        s.draw(at: NSPoint(x: (bounds.width  - sz.width)  / 2,
+                           y: (bounds.height - sz.height) / 2))
+    }
+
+    // MARK: - Focus
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        isRecording = true
+        applyBorderColor()
+        needsDisplay = true
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        isRecording = false
+        applyBorderColor()
+        needsDisplay = true
+        return true
+    }
+
+    private func applyBorderColor() {
+        layer?.borderColor = (isRecording
+            ? NSColor.controlAccentColor
+            : NSColor.separatorColor).cgColor
+    }
+
+    // MARK: - Key capture
+
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard !mods.isEmpty else { return }   // bare key without modifier = ignore
+
+        // Esc with no modifier = cancel
+        if event.keyCode == 53 && mods.isEmpty {
+            window?.makeFirstResponder(nil)
+            return
+        }
+
+        // Require at least one modifier so bare letter keys are ignored
+        guard !mods.isEmpty else { return }
+
         let kc = Int(event.keyCode)
-        UserDefaults.standard.set(kc, forKey: Prefs.hotkeyKeyCode)
+        UserDefaults.standard.set(kc,             forKey: Prefs.hotkeyKeyCode)
         UserDefaults.standard.set(Int(mods.rawValue), forKey: Prefs.hotkeyModifiers)
-        stringValue = describe(keyCode: kc, modifiers: mods)
+        needsDisplay = true
         NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
+        window?.makeFirstResponder(nil)
     }
+
+    // MARK: - Formatting
 
     private func describe(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String {
         var s = ""
-        if modifiers.contains(.control)  { s += "⌃" }
-        if modifiers.contains(.option)   { s += "⌥" }
-        if modifiers.contains(.shift)    { s += "⇧" }
-        if modifiers.contains(.command)  { s += "⌘" }
+        if modifiers.contains(.control) { s += "⌃" }
+        if modifiers.contains(.option)  { s += "⌥" }
+        if modifiers.contains(.shift)   { s += "⇧" }
+        if modifiers.contains(.command) { s += "⌘" }
         s += keyNames[keyCode] ?? "?"
         return s
-    }
-
-    // Draw a subtle "recording" border when focused
-    override func becomeFirstResponder() -> Bool {
-        let result = super.becomeFirstResponder()
-        if result { placeholderString = "Press shortcut…" }
-        return result
-    }
-    override func resignFirstResponder() -> Bool {
-        let result = super.resignFirstResponder()
-        if result { placeholderString = "Click to record…" }
-        return result
     }
 }

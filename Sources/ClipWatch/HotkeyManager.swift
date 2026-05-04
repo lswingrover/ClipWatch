@@ -19,13 +19,24 @@ import AppKit
 //   event.modifierFlags must be masked with .deviceIndependentFlagsMask before
 //   comparison. Without the mask, bits from capslock, numpad, and function keys
 //   leak in and cause false negatives on some keyboards.
+//
+// Accessibility polling:
+//   On first launch, Accessibility is not granted. We prompt and then poll
+//   every 3 s. Once the user grants it in System Settings the monitor registers
+//   automatically — no restart required.
 
 final class HotkeyManager {
     var onActivate: (() -> Void)?
-    private var monitor: Any?
+    private var monitor:            Any?
+    private var accessibilityTimer: Timer?
 
     func start() {
-        registerMonitor()
+        if AXIsProcessTrusted() {
+            registerMonitor()
+        } else {
+            promptForAccessibility()
+            startAccessibilityPolling()
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(hotkeyChanged),
@@ -35,13 +46,34 @@ final class HotkeyManager {
     }
 
     func stop() {
+        accessibilityTimer?.invalidate()
+        accessibilityTimer = nil
         removeMonitor()
         NotificationCenter.default.removeObserver(self)
     }
 
+    // MARK: - Accessibility polling
+
+    /// Polls every 3 s until AXIsProcessTrusted() returns true, then registers.
+    /// Stops itself once permission is granted.
+    private func startAccessibilityPolling() {
+        accessibilityTimer?.invalidate()
+        accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if AXIsProcessTrusted() {
+                self.accessibilityTimer?.invalidate()
+                self.accessibilityTimer = nil
+                self.registerMonitor()
+            }
+        }
+    }
+
+    // MARK: - Monitor
+
     private func registerMonitor() {
         guard AXIsProcessTrusted() else {
             promptForAccessibility()
+            startAccessibilityPolling()
             return
         }
         removeMonitor()
