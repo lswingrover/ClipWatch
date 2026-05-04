@@ -5,13 +5,12 @@ import AppKit
 //
 // On launch, asynchronously fetches the latest GitHub release for ClipWatch
 // and compares it to the running version. If a newer version is available,
-// posts .updateAvailable so AppDelegate can surface it in the menu.
+// posts .updateAvailable so AppDelegate can surface it in the status-bar menu.
+// AppDelegate also exposes "View on GitHub" as a persistent menu item.
+// PreferencesWindowController shows a GitHub link in the footer.
 //
 // Runs once per launch. No background timer — no annoyance.
 // Uses URLSession's shared session; no auth required for public repos.
-//
-// TODO (v1.4): surface repoURL in menu bar dropdown and in Preferences
-//   so users can navigate to the project page directly from the app.
 
 extension Notification.Name {
     static let updateAvailable = Notification.Name("com.louisswingrover.clipwatch.updateAvailable")
