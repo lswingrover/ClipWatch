@@ -186,4 +186,11 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-Part of the [*Watch suite](https://github.com/lswingrover): MacWatch · NetWatch · NarWatch · VolleyWatch · ClipWatch.
+## Related tools
+
+These apps are built by the same author and follow the same install pattern — build from source, no App Store, optional Claude companion plugin:
+
+| App | What it does |
+|-----|-------------|
+| [NetWatch](https://github.com/lswingrover/NetWatch) | Network monitoring — ping latency, DNS health, Wi-Fi metrics, automatic incident bundling and ISP escalation drafts |
+| [MacWatch](https://github.com/lswingrover/MacWatch) | Mac system health — CPU temps, memory pressure, battery health, process monitoring, composite health score |
