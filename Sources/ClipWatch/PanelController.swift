@@ -11,6 +11,10 @@ import AppKit
 //      another app via Cmd-Tab, Dock click, etc.
 //
 // Focus strategy:
+//   The panel uses .nonactivatingPanel so the PREVIOUS app remains frontmost
+//   while the panel receives keyboard input. NSApp.activate is intentionally
+//   NOT called — calling it would steal focus and break the ⌘V paste after
+//   dismissal (the CGEvent would fire into ClipWatch, not the user's app).
 //   makeFirstResponder is dispatched async so the run loop has processed
 //   makeKeyAndOrderFront before we attempt to set focus. Without the async,
 //   the panel may not yet be key and makeFirstResponder silently fails.
@@ -30,7 +34,11 @@ final class PanelController {
         if panel == nil { buildPanel() }
         position()
         panel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Do NOT call NSApp.activate here. The .nonactivatingPanel style mask lets
+        // the panel become the key window and receive keyboard input while the
+        // PREVIOUS app remains frontmost. Calling NSApp.activate would steal focus
+        // from that app, so when the panel closes and ⌘V fires, ClipWatch would be
+        // the active process and the paste would land nowhere.
 
         // Async so the window is fully on-screen and key before we focus
         DispatchQueue.main.async { [weak self] in
