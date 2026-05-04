@@ -150,7 +150,7 @@ final class SearchViewController: NSViewController {
         let hint = NSTextField(labelWithString:
             "↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss")
         hint.translatesAutoresizingMaskIntoConstraints = false
-        hint.textColor = .quaternaryLabelColor
+        hint.textColor = .secondaryLabelColor
         hint.font      = .monospacedSystemFont(ofSize: 10, weight: .regular)
         hint.alignment = .center
         view.addSubview(hint)
@@ -166,8 +166,15 @@ final class SearchViewController: NSViewController {
     func prepareForDisplay() {
         searchField.stringValue = ""
         reload(query: "")
-        view.window?.makeFirstResponder(searchField)
+        focusSearchField()
         installKeyMonitor()
+    }
+
+    /// Called by PanelController when NSWindow.didBecomeKeyNotification fires —
+    /// the window is guaranteed to be key at that point, so makeFirstResponder
+    /// reliably installs the field editor onto the search field.
+    func focusSearchField() {
+        view.window?.makeFirstResponder(searchField)
     }
 
     func reset() {

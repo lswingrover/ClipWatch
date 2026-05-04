@@ -4,25 +4,28 @@ import AppKit
 //
 // Manages the floating search panel.
 //
+// Focus strategy:
+//   NSApp.activate IS called so the panel reliably receives keyboard events.
+//   Before activating, the current frontmost app is captured in `previousApp`.
+//   When the user pastes OR dismisses with Esc, we re-activate `previousApp`
+//   so focus returns to the right text field.
+//
+//   makeFirstResponder is attempted twice: once async after makeKeyAndOrderFront,
+//   and again when NSWindow.didBecomeKeyNotification fires. The notification path
+//   is the reliable one — by the time it fires, the window is definitely key and
+//   the field editor can be installed correctly.
+//
 // Dismiss strategy (belt-and-suspenders):
 //   1. Global mouse monitor — catches clicks anywhere outside the panel,
 //      including on the desktop where no app-switch occurs.
 //   2. NSApplication.didResignActiveNotification — catches switching to
 //      another app via Cmd-Tab, Dock click, etc.
-//
-// Focus strategy:
-//   The panel uses .nonactivatingPanel so the PREVIOUS app remains frontmost
-//   while the panel receives keyboard input. NSApp.activate is intentionally
-//   NOT called — calling it would steal focus and break the ⌘V paste after
-//   dismissal (the CGEvent would fire into ClipWatch, not the user's app).
-//   makeFirstResponder is dispatched async so the run loop has processed
-//   makeKeyAndOrderFront before we attempt to set focus. Without the async,
-//   the panel may not yet be key and makeFirstResponder silently fails.
 
 final class PanelController {
     private var panel:        NSPanel?
     private var searchVC:     SearchViewController?
-    private var clickMonitor: Any?   // global mouse-down monitor
+    private var clickMonitor: Any?                   // global mouse-down monitor
+    private var previousApp:  NSRunningApplication?  // app that owned focus before panel
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -32,15 +35,16 @@ final class PanelController {
 
     func show() {
         if panel == nil { buildPanel() }
+
+        // Snapshot whoever has focus RIGHT NOW before we steal it.
+        previousApp = NSWorkspace.shared.frontmostApplication
+
         position()
         panel?.makeKeyAndOrderFront(nil)
-        // Do NOT call NSApp.activate here. The .nonactivatingPanel style mask lets
-        // the panel become the key window and receive keyboard input while the
-        // PREVIOUS app remains frontmost. Calling NSApp.activate would steal focus
-        // from that app, so when the panel closes and ⌘V fires, ClipWatch would be
-        // the active process and the paste would land nowhere.
+        NSApp.activate(ignoringOtherApps: true)
 
-        // Async so the window is fully on-screen and key before we focus
+        // First attempt — may still be in flight when NSApp.activate is settling.
+        // The didBecomeKeyNotification handler below is the reliable backstop.
         DispatchQueue.main.async { [weak self] in
             self?.searchVC?.prepareForDisplay()
         }
@@ -63,14 +67,30 @@ final class PanelController {
 
     private func buildPanel() {
         let vc = SearchViewController()
+
         vc.onPaste = { [weak self] content in
-            self?.hide()
-            // Delay: previous app must regain focus before CGEvent ⌘V fires
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                AppDelegate.shared?.paste(content)
+            guard let self else { return }
+            let target = self.previousApp
+            self.hide()
+            // Re-activate the previous app first, then fire ⌘V into it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                target?.activate(options: .activateIgnoringOtherApps)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+                    AppDelegate.shared?.paste(content)
+                }
             }
         }
-        vc.onDismiss = { [weak self] in self?.hide() }
+
+        vc.onDismiss = { [weak self] in
+            guard let self else { return }
+            let target = self.previousApp
+            self.hide()
+            // Return focus to wherever the user was before invoking the panel.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                target?.activate(options: .activateIgnoringOtherApps)
+            }
+        }
+
         searchVC = vc
 
         let p = NSPanel(
@@ -87,6 +107,14 @@ final class PanelController {
         p.hidesOnDeactivate     = false
         p.isMovableByWindowBackground = true
 
+        // Reliable focus: fire makeFirstResponder once the window is actually key.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: p
+        )
+
         // Dismiss when another app activates (Cmd-Tab, Dock click, etc.)
         NotificationCenter.default.addObserver(
             self,
@@ -95,6 +123,11 @@ final class PanelController {
             object: nil
         )
         panel = p
+    }
+
+    /// Called when the panel is definitely the key window — safe to focus the search field.
+    @objc private func windowDidBecomeKey() {
+        searchVC?.focusSearchField()
     }
 
     @objc private func appDeactivated() { hide() }
