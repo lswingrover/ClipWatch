@@ -9,6 +9,9 @@ import AppKit
 //
 // Runs once per launch. No background timer — no annoyance.
 // Uses URLSession's shared session; no auth required for public repos.
+//
+// TODO (v1.4): surface repoURL in menu bar dropdown and in Preferences
+//   so users can navigate to the project page directly from the app.
 
 extension Notification.Name {
     static let updateAvailable = Notification.Name("com.louisswingrover.clipwatch.updateAvailable")
