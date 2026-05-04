@@ -112,6 +112,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
+        let ghItem = NSMenuItem(title: "View on GitHub",
+                                action: #selector(openGitHub),
+                                keyEquivalent: "")
+        ghItem.target = self
+        menu.addItem(ghItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ClipWatch",
                      action: #selector(NSApplication.terminate(_:)),
@@ -131,6 +136,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func updateAvailable(_ note: Notification) {
         pendingUpdate = note.object as? UpdateInfo
         buildMenu()
+    }
+
+    @objc private func openGitHub() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/lswingrover/clipwatch")!)
     }
 
     @objc private func openUpdatePage() {

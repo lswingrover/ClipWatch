@@ -193,6 +193,21 @@ final class PreferencesViewController: NSViewController {
         btnRow.spacing = 4
         view.addSubview(btnRow)
 
+        // ── GitHub link ────────────────────────────────────────────────────────
+        let ghLink = NSButton(title: "", target: self, action: #selector(openGitHub))
+        ghLink.isBordered = false
+        ghLink.translatesAutoresizingMaskIntoConstraints = false
+        let linkAttrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.linkColor,
+            .font: NSFont.systemFont(ofSize: 11),
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+        ]
+        ghLink.attributedTitle = NSAttributedString(
+            string: "github.com/lswingrover/clipwatch",
+            attributes: linkAttrs
+        )
+        view.addSubview(ghLink)
+
         // ── Constraints ────────────────────────────────────────────────────────
         NSLayoutConstraint.activate([
             // Controls stack: flush top-left, full width
@@ -206,9 +221,13 @@ final class PreferencesViewController: NSViewController {
             exScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
             exScroll.bottomAnchor.constraint(equalTo: btnRow.topAnchor, constant: -6),
 
-            // Buttons: bottom-trailing corner
+            // +/− buttons: bottom-trailing, above GitHub link
             btnRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
-            btnRow.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -margin),
+            btnRow.bottomAnchor.constraint(equalTo: ghLink.topAnchor, constant: -6),
+
+            // GitHub link: bottom-leading corner
+            ghLink.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
+            ghLink.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
         ])
     }
 
@@ -320,6 +339,10 @@ final class PreferencesViewController: NSViewController {
         let idx = unlockDurationPopup.indexOfSelectedItem
         guard idx >= 0, idx < unlockDurationValues.count else { return }
         UserDefaults.standard.set(unlockDurationValues[idx], forKey: Prefs.unlockDuration)
+    }
+
+    @objc private func openGitHub() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/lswingrover/clipwatch")!)
     }
 
     @objc private func clearAllHistory() {
