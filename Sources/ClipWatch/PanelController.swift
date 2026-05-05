@@ -27,6 +27,15 @@ import LocalAuthentication
 //   1. Global mouse monitor — clicks anywhere outside the panel.
 //   2. NSApplication.didResignActiveNotification — Cmd-Tab, Dock, etc.
 
+// NSWindow.canBecomeKey returns false by default for borderless windows
+// (no .titled in styleMask). Without this override makeKeyAndOrderFront
+// orders the window front but never makes it key, so makeFirstResponder
+// silently fails and the search field never receives keyboard input.
+private final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool  { true  }
+    override var canBecomeMain: Bool { false }
+}
+
 final class PanelController {
     private var panel:        NSPanel?
     private var searchVC:     SearchViewController?
@@ -194,11 +203,11 @@ final class PanelController {
 
         searchVC = vc
 
-        let p = NSPanel(
+        let p = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 540, height: 440),
-            // .nonactivatingPanel prevented the window from reliably becoming key,
-            // breaking makeFirstResponder on the search field. Use a normal activating
-            // panel so keyboard events reach the search field without any workarounds.
+            // KeyablePanel overrides canBecomeKey → true so makeKeyAndOrderFront
+            // actually makes the window key despite the borderless style mask.
+            // (NSWindow.canBecomeKey returns false for borderless windows by default.)
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false

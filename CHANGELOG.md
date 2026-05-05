@@ -9,6 +9,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.2] — 2026-05-05
+
+### Fixed
+- **Search field still not receiving keyboard input** — root cause: borderless
+  windows return `false` from `NSWindow.canBecomeKey` by default (only titled or
+  resizable windows return `true`). `makeKeyAndOrderFront` was ordering the panel
+  front but silently failing to make it key, so `makeFirstResponder` had no effect.
+  Fixed by subclassing `NSPanel` as `KeyablePanel` and overriding
+  `canBecomeKey → true` / `canBecomeMain → false`.
+
+---
+
 ## [1.5.1] — 2026-05-05
 
 ### Fixed
