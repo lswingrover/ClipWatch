@@ -136,10 +136,10 @@ final class PanelController {
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        let auth = isAuthenticated
-        DispatchQueue.main.async { [weak self] in
-            self?.searchVC?.prepareForDisplay(isAuthenticated: auth)
-        }
+        // Call prepareForDisplay directly rather than async — the panel is now a
+        // regular activating panel so makeKeyAndOrderFront + activate are synchronous
+        // and the window is key by the time we call makeFirstResponder.
+        searchVC?.prepareForDisplay(isAuthenticated: isAuthenticated)
 
         clickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -190,7 +190,10 @@ final class PanelController {
 
         let p = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 540, height: 440),
-            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            // .nonactivatingPanel prevented the window from reliably becoming key,
+            // breaking makeFirstResponder on the search field. Use a normal activating
+            // panel so keyboard events reach the search field without any workarounds.
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -232,12 +235,43 @@ final class PanelController {
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
+    /// Returns the screen where the panel should appear.
+    ///
+    /// Uses the screen containing the previously frontmost application's window —
+    /// no mouse/cursor dependency. Falls back to NSScreen.main.
     private func targetScreen() -> NSScreen {
-        if Prefs.screenMode() == "cursor" {
-            let pt = NSEvent.mouseLocation
-            return NSScreen.screens.first { NSMouseInRect(pt, $0.frame, false) }
-                ?? NSScreen.main ?? NSScreen.screens[0]
-        }
+        if let screen = screenForApp(previousApp) { return screen }
         return NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    /// Find the NSScreen containing the key window of a running application.
+    /// Uses CGWindowListCopyWindowInfo to locate the app's topmost visible window
+    /// without requiring Accessibility or mouse position.
+    private func screenForApp(_ app: NSRunningApplication?) -> NSScreen? {
+        guard let app else { return nil }
+        let pid = app.processIdentifier
+
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return nil }
+
+        // CGWindowBounds Y is measured from the top of the global screen space.
+        // NSScreen uses a flipped coordinate system (Y from bottom).
+        let screenMaxY = NSScreen.screens.map { $0.frame.maxY }.max() ?? 0
+
+        for win in windowList {
+            guard (win[kCGWindowOwnerPID as String] as? Int32) == Int32(pid),
+                  let bounds = win[kCGWindowBounds as String] as? [String: CGFloat],
+                  let wx = bounds["X"], let wy = bounds["Y"],
+                  let ww = bounds["Width"], let wh = bounds["Height"],
+                  ww > 0, wh > 0 else { continue }
+            let centerX = wx + ww / 2
+            let centerY = screenMaxY - (wy + wh / 2)   // flip Y
+            let pt = NSPoint(x: centerX, y: centerY)
+            if let screen = NSScreen.screens.first(where: { $0.frame.contains(pt) }) {
+                return screen
+            }
+        }
+        return nil
     }
 }

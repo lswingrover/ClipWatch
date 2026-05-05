@@ -9,6 +9,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] — 2026-05-05
+
+### Fixed
+- **Search panel not accepting keyboard input** — `NSPanel` was created with `.nonactivatingPanel`
+  in the style mask, which prevented `makeKeyAndOrderFront` from reliably making the window key.
+  `makeFirstResponder` on the search field therefore silently failed, leaving the panel visible but
+  unable to receive any keystrokes. Removed `.nonactivatingPanel`; the panel is now a standard
+  activating window that properly takes focus when summoned.
+- **`prepareForDisplay` called asynchronously after focus** — previously wrapped in
+  `DispatchQueue.main.async`, which introduced a one-runloop delay that could race with the window
+  becoming key. Now called directly after `makeKeyAndOrderFront + NSApp.activate`.
+- **Panel positioned by mouse cursor** — `targetScreen()` used `NSEvent.mouseLocation` to decide
+  which monitor to open the panel on. Unreliable when invoked via a global keyboard hotkey (cursor
+  may be on a different display than the user's attention). Replaced with a
+  `CGWindowListCopyWindowInfo`-based lookup that finds the previous frontmost app's window centre,
+  placing the panel on the correct display without any cursor dependency.
+
+---
+
 ## [1.4.0] — 2026-05-05
 
 ### Added
