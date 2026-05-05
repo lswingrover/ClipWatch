@@ -174,6 +174,18 @@ final class ClipStore {
     }
 
     private func pruneCount() {
+        // Only run the expensive NOT IN delete when we're actually over the cap.
+        // On every insert that doesn't breach 50 000 unpinned clips this is a
+        // single COUNT(*) — fast index scan — rather than a full-table NOT IN.
+        var countStmt: OpaquePointer?
+        defer { sqlite3_finalize(countStmt) }
+        guard sqlite3_prepare_v2(db,
+                                 "SELECT COUNT(*) FROM clips WHERE pinned = 0",
+                                 -1, &countStmt, nil) == SQLITE_OK,
+              sqlite3_step(countStmt) == SQLITE_ROW,
+              sqlite3_column_int64(countStmt, 0) > 50_000
+        else { return }
+
         let sql = """
         DELETE FROM clips WHERE pinned = 0 AND id NOT IN (
             SELECT id FROM clips WHERE pinned = 0 ORDER BY ts DESC LIMIT 50000

@@ -48,6 +48,8 @@ final class PreferencesViewController: NSViewController {
     private var shortcutField:       ShortcutRecorderField!
     private var menuCountStepper:    NSStepper!
     private var menuCountLabel:      NSTextField!
+    private var pollIntervalStepper: NSStepper!
+    private var pollIntervalLabel:   NSTextField!
     private var retentionSlider:     NSSlider!
     private var retentionLabel:      NSTextField!
     private var screenSegment:       NSSegmentedControl!
@@ -102,6 +104,21 @@ final class PreferencesViewController: NSViewController {
         stepperStack.orientation = .horizontal
         stepperStack.spacing     = 4
         controlsStack.addArrangedSubview(makeRow("Recent items in menu", stepperStack))
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
+
+        // Monitoring
+        controlsStack.addArrangedSubview(sectionHeader("Monitoring"))
+        pollIntervalLabel   = NSTextField(labelWithString: "1.0 s")
+        pollIntervalStepper = NSStepper()
+        pollIntervalStepper.minValue  = 0.5
+        pollIntervalStepper.maxValue  = 5.0
+        pollIntervalStepper.increment = 0.5
+        pollIntervalStepper.target    = self
+        pollIntervalStepper.action    = #selector(pollIntervalChanged)
+        let pollStack = NSStackView(views: [pollIntervalLabel, pollIntervalStepper])
+        pollStack.orientation = .horizontal
+        pollStack.spacing     = 4
+        controlsStack.addArrangedSubview(makeRow("Clipboard check interval", pollStack))
         controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
         // History
@@ -291,6 +308,10 @@ final class PreferencesViewController: NSViewController {
         menuCountStepper.intValue  = Int32(count)
         menuCountLabel.stringValue = "\(count)"
 
+        let interval = Prefs.pollIntervalSeconds()
+        pollIntervalStepper.doubleValue = interval
+        pollIntervalLabel.stringValue   = pollIntervalText(interval)
+
         let days = UserDefaults.standard.integer(forKey: Prefs.retentionDays)
         retentionSlider.intValue   = Int32(days > 0 ? days : 365)
         retentionLabel.stringValue = "\(retentionSlider.intValue) days"
@@ -318,6 +339,20 @@ final class PreferencesViewController: NSViewController {
         menuCountLabel.stringValue = "\(v)"
         UserDefaults.standard.set(v, forKey: Prefs.menuItemCount)
         NotificationCenter.default.post(name: .clipStoreDidChange, object: nil)
+    }
+
+    @objc private func pollIntervalChanged() {
+        let v = pollIntervalStepper.doubleValue
+        pollIntervalLabel.stringValue = pollIntervalText(v)
+        UserDefaults.standard.set(v, forKey: Prefs.pollInterval)
+        // Apply immediately — no restart required
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.monitor.restart()
+        }
+    }
+
+    private func pollIntervalText(_ seconds: Double) -> String {
+        seconds == 1.0 ? "1 s" : String(format: "%.1f s", seconds)
     }
 
     @objc private func sliderChanged() {

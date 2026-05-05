@@ -9,6 +9,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.0] — 2026-05-05
+
+### Added
+- **Configurable clipboard check interval** — Preferences → Monitoring → "Clipboard check interval"
+  stepper (0.5–5.0 s, 0.5 s steps). Default changed from 0.5 s to **1.0 s**. Applied immediately
+  without restarting the app. Stored in UserDefaults `pollInterval`.
+
+### Fixed
+- **Timer RunLoop mode** — `ClipboardMonitor` timer was added to `.common` mode, causing it to
+  fire during menu tracking and scroll events. Changed to `.default` — correct for a background
+  polling timer with no UI interaction requirement.
+- **`AXIsProcessTrusted()` called every poll** — cached with a 30 s TTL so the system call runs
+  at most once per 30 s instead of 1–2× per second.
+- **`rebuildMenu()` debounce** — menu was rebuilt synchronously on every `clipStoreDidChange`
+  notification. Now coalesced behind a 200 ms timer so rapid clipboard events produce one rebuild.
+- **`pruneCount()` full-table scan on every insert** — the `NOT IN (SELECT ... LIMIT 50000)`
+  delete ran unconditionally on every clip insertion. Now guarded by a `COUNT(*)` check; the
+  expensive delete only runs when the unpinned clip count actually exceeds 50 000.
+
+---
+
 ## [1.3.0] — 2026-04-20
 
 ### Added

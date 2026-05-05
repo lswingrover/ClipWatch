@@ -8,12 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var shared: AppDelegate?
 
     private let store    = ClipStore.shared
-    private let monitor  = ClipboardMonitor()
+    let monitor          = ClipboardMonitor()
     private let hotkey   = HotkeyManager()
     private let panel    = PanelController()
 
-    private var statusItem:     NSStatusItem!
-    private var pendingUpdate:  UpdateInfo?
+    private var statusItem:          NSStatusItem!
+    private var pendingUpdate:       UpdateInfo?
+    private var menuRebuildTimer:    Timer?
 
     // MARK: - Launch
 
@@ -54,7 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
     }
 
-    @objc func rebuildMenu() { buildMenu() }
+    @objc func rebuildMenu() {
+        // Debounce: coalesce rapid clipStoreDidChange notifications (e.g. programmatic
+        // bulk pastes) into a single menu rebuild 200 ms after the last event.
+        menuRebuildTimer?.invalidate()
+        menuRebuildTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+            self?.buildMenu()
+        }
+    }
 
     private func buildMenu() {
         let menu   = NSMenu()

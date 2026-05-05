@@ -19,20 +19,49 @@ final class ClipboardMonitor {
     private var timer: Timer?
     private var lastChangeCount: Int
 
+    // AXIsProcessTrusted() is a system call — cache it so we don't invoke it
+    // 1–2× per second. Permission changes are rare; 30 s TTL is more than fast enough.
+    private var axTrustCached   = false
+    private var axTrustCachedAt = Date.distantPast
+    private let axTrustTTL: TimeInterval = 30
+
     init() {
         lastChangeCount = NSPasteboard.general.changeCount
     }
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.poll()
-        }
-        RunLoop.main.add(timer!, forMode: .common)
+        scheduleTimer()
+    }
+
+    /// Re-schedule the timer at the current Prefs.pollIntervalSeconds().
+    /// Call from Preferences when the user changes the poll interval.
+    func restart() {
+        scheduleTimer()
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    private func scheduleTimer() {
+        timer?.invalidate()
+        let interval = Prefs.pollIntervalSeconds()
+        // .default (not .common): avoids firing during menu-tracking and scroll events,
+        // which would add latency to UI interactions for no benefit.
+        timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        RunLoop.main.add(timer!, forMode: .default)
+    }
+
+    private func isAXTrusted() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(axTrustCachedAt) > axTrustTTL {
+            axTrustCached   = AXIsProcessTrusted()
+            axTrustCachedAt = now
+        }
+        return axTrustCached
     }
 
     // MARK: - Known browsers
@@ -67,7 +96,7 @@ final class ClipboardMonitor {
         if let app = frontApp,
            let bid = source,
            browserBundleIDs.contains(bid),
-           AXIsProcessTrusted() {
+           isAXTrusted() {
             let patterns = UserDefaults.standard.stringArray(forKey: Prefs.excludedURLs) ?? []
             if !patterns.isEmpty,
                let browserURL = currentBrowserURL(pid: app.processIdentifier),

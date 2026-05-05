@@ -13,6 +13,7 @@ enum Prefs {
     static let secureMode      = "secureMode"       // Bool — require Touch ID to open panel
     static let unlockDuration  = "unlockDuration"   // Int  — seconds to stay unlocked (0=always ask, -1=session)
     static let launchAtLogin   = "launchAtLogin"    // Bool
+    static let pollInterval    = "pollInterval"     // Double — seconds between clipboard checks
 
     static let defaultExcludedApps: [String] = [
         "com.1password.1password",
@@ -53,5 +54,11 @@ enum Prefs {
     static func screenMode() -> String {
         let v = UserDefaults.standard.string(forKey: screenFocusMode) ?? ""
         return v.isEmpty ? "activeApp" : v
+    }
+
+    /// Poll interval in seconds. Clamped to 0.5–5.0; defaults to 1.0 s.
+    static func pollIntervalSeconds() -> TimeInterval {
+        let v = UserDefaults.standard.double(forKey: pollInterval)
+        return (v >= 0.5 && v <= 5.0) ? v : 1.0
     }
 }
