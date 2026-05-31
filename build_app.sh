@@ -9,6 +9,7 @@ APP_NAME="ClipWatch"
 BUNDLE_ID="com.louisswingrover.clipwatch"
 CONFIG="release"
 NO_INSTALL=false
+APP_VERSION=$(grep 'static let current' "$SCRIPT_DIR/Sources/ClipWatch/Version.swift" | sed 's/.*"\(.*\)".*/\1/')
 
 for arg in "$@"; do
   case "$arg" in
@@ -56,6 +57,8 @@ mkdir -p "$TMP_APP/Contents/Resources"
 cp "$BINARY" "$TMP_APP/Contents/MacOS/$APP_NAME"
 chmod +x "$TMP_APP/Contents/MacOS/$APP_NAME"
 cp "$SCRIPT_DIR/support/Info.plist" "$TMP_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$TMP_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION"            "$TMP_APP/Contents/Info.plist"
 
 if [[ -f "$ICNS_PATH" ]]; then
   cp "$ICNS_PATH" "$TMP_APP/Contents/Resources/AppIcon.icns"
