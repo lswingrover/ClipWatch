@@ -18,7 +18,7 @@ for arg in "$@"; do
   esac
 done
 
-INSTALL_DIR="$HOME/Applications"
+INSTALL_DIR="/Applications"
 mkdir -p "$INSTALL_DIR"
 
 APP_BUNDLE="$APP_NAME.app"
@@ -135,7 +135,7 @@ open "$INSTALL_DIR/$APP_BUNDLE"
 
 echo ""
 echo "╔═══════════════════════════════════════════════╗"
-echo "║  ClipWatch installed to ~/Applications ✅     ║"
+echo "║  ClipWatch installed to /Applications ✅     ║"
 echo "║                                               ║"
 echo "║  Look for the clipboard icon in your menu bar ║"
 echo "║  Grant Accessibility access when prompted     ║"
