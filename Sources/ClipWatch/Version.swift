@@ -2,5 +2,5 @@ import ClipWatchCore
 // Version.swift — ClipWatch version string.
 // Bump this before every ship.
 enum Version {
-    static let current = "1.5.5"
+    static let current = "1.6.0"
 }

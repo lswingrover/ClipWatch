@@ -25,6 +25,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.0] -- 2026-06-02
+### Added
+- **Keychain-backed lock/unlock** -- LockManager ties ClipWatch lock state to the
+  macOS user keychain via kSecAttrAccessibleWhenUnlocked, matching 1Password model.
+  Token unreadable when screen is locked.
+- **Touch ID / Apple Watch / Mac password** -- LAContext .deviceOwnerAuthentication
+  covers all three automatically.
+- **Auto-lock timer** -- fires when unlock-duration window expires.
+- **Idle lock timer** -- fires after N minutes of ClipWatch inactivity.
+- **Screen sleep -> auto-lock** (configurable, default on). Wake silently re-unlocks
+  if keychain token still readable and unlock window has not expired.
+- **Status bar icon** -- lock.fill when locked, doc.on.clipboard when unlocked.
+- **Lock Now menu item** (Cmd+Shift+L).
+- **Locked menu state** -- shows Unlock... instead of clips.
+- **Panel hides immediately on lock** via clipWatchDidLock notification.
+- **Preferences Auto-lock section** -- Lock when device locks or sleeps (checkbox,
+  default on) + Lock after idle for (Never/1/5/10/30/60 min popup).
+- **API**: GET /lock; locked + secureModeEnabled in /ping + /health; HTTP 423 on
+  all data endpoints when locked.
+- **New prefs**: lockOnSleep (Bool, default true), idleLockMinutes (Int, default 0).
+
+---
+
 ## [1.5.3] — 2026-05-05
 
 ### Added
