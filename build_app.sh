@@ -43,7 +43,7 @@ ICON_DIR="/tmp/clipwatch_icon_build"
 ICNS_PATH="$ICON_DIR/AppIcon.icns"
 echo ""
 echo "▶ Generating app icon..."
-swift "$SCRIPT_DIR/make_icon.swift" "$ICON_DIR" 2>/dev/null && \
+python3 "$SCRIPT_DIR/make_icon.py" "$ICON_DIR" 2>/dev/null && \
   echo "✅  Icon generated" || \
   echo "⚠️   Icon generation skipped — generic icon will be used"
 
