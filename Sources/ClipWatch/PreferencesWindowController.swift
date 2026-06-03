@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import ServiceManagement
+import ClipWatchCore
 
 // MARK: - ExclusionItem
 //

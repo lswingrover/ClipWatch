@@ -1,4 +1,5 @@
 import AppKit
+import ClipWatchCore
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

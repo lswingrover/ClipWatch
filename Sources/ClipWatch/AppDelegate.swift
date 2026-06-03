@@ -1,4 +1,5 @@
 import AppKit
+import ClipWatchCore
 
 // MARK: - AppDelegate
 
@@ -7,7 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Accessible from PanelController's paste callback
     static weak var shared: AppDelegate?
 
-    private let store    = ClipStore.shared
+    private let store     = ClipStore.shared
+    // HEADLESS: localhost HTTP API for Claude/AI administration (GH#XX)
+    private let apiServer = ClipWatchAPIServer()
     let monitor          = ClipboardMonitor()
     private let hotkey   = HotkeyManager()
     private let panel    = PanelController()
@@ -41,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
         UpdateChecker.checkInBackground()
+        apiServer.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        apiServer.stop()
     }
 
     // MARK: - Status Item

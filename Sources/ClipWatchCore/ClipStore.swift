@@ -17,16 +17,16 @@ import SQLite3
 //   Older databases without the `sensitive` column receive it via ALTER TABLE.
 //   SQLite silently returns an error if the column already exists; we ignore it.
 
-final class ClipStore {
-    static let shared = ClipStore()
+public final class ClipStore {
+    public static let shared = ClipStore()
 
-    struct Clip {
-        let id:        Int64
-        let content:   String
-        let ts:        Date
-        let pinned:    Bool
-        let source:    String?   // bundle ID of the source app at copy time
-        let sensitive: Bool      // true when content looks like a credential
+    public struct Clip {
+        public let id:        Int64
+        public let content:   String
+        public let ts:        Date
+        public let pinned:    Bool
+        public let source:    String?   // bundle ID of the source app at copy time
+        public let sensitive: Bool      // true when content looks like a credential
     }
 
     private var db: OpaquePointer?
@@ -49,9 +49,9 @@ final class ClipStore {
             print("ClipStore: could not resolve Application Support directory")
             return
         }
-        let appSupport = appSupportBase.appendingPathComponent("ClipWatch", isDirectory: true)
+        public let appSupport = appSupportBase.appendingPathComponent("ClipWatch", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
-        let path = appSupport.appendingPathComponent("clips.db").path
+        public let path = appSupport.appendingPathComponent("clips.db").path
         guard sqlite3_open(path, &db) == SQLITE_OK else {
             print("ClipStore: failed to open database at \(path)")
             return
@@ -60,7 +60,7 @@ final class ClipStore {
     }
 
     private func createSchema() {
-        let sql = """
+        public let sql = """
         CREATE TABLE IF NOT EXISTS clips (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             content   TEXT    NOT NULL,
@@ -96,19 +96,19 @@ final class ClipStore {
 
     // MARK: - Write
 
-    func insert(content: String, source: String?) {
+    public func insert(content: String, source: String?) {
         // App exclusion check
-        var excluded = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps) ?? []
+        public var excluded = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps) ?? []
         if excluded.isEmpty { excluded = Prefs.defaultExcludedApps }
         if let source, excluded.contains(source) { return }
 
         // Deduplicate: skip if identical to the most recent clip
         if let last = recent(limit: 1).first, last.content == content { return }
 
-        let isSensitive = SensitiveDetector.looksLike(content)
+        public let isSensitive = SensitiveDetector.looksLike(content)
 
-        let sql = "INSERT INTO clips (content, ts, source, sensitive) VALUES (?, ?, ?, ?)"
-        var stmt: OpaquePointer?
+        public let sql = "INSERT INTO clips (content, ts, source, sensitive) VALUES (?, ?, ?, ?)"
+        public var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_text(stmt, 1, content, -1, SQLITE_TRANSIENT)
@@ -123,20 +123,20 @@ final class ClipStore {
         pruneCount()
     }
 
-    func togglePin(id: Int64) {
+    public func togglePin(id: Int64) {
         exec("UPDATE clips SET pinned = CASE WHEN pinned=0 THEN 1 ELSE 0 END WHERE id=?", id)
     }
 
-    func markSensitive(id: Int64, sensitive: Bool) {
+    public func markSensitive(id: Int64, sensitive: Bool) {
         exec2("UPDATE clips SET sensitive = ? WHERE id = ?",
               Int64(sensitive ? 1 : 0), id)
     }
 
-    func delete(id: Int64) {
+    public func delete(id: Int64) {
         exec("DELETE FROM clips WHERE id=?", id)
     }
 
-    func deleteAll() {
+    public func deleteAll() {
         sqlite3_exec(db, "DELETE FROM clips", nil, nil, nil)
         // Rebuild FTS index to match now-empty table (faster than per-row triggers for bulk delete).
         sqlite3_exec(db, "INSERT INTO clips_fts(clips_fts) VALUES('rebuild')", nil, nil, nil)
@@ -145,21 +145,21 @@ final class ClipStore {
 
     // MARK: - Read
 
-    func recent(limit: Int) -> [Clip] {
-        let sql = """
+    public func recent(limit: Int) -> [Clip] {
+        public let sql = """
         SELECT id, content, ts, pinned, source, sensitive FROM clips
         ORDER BY pinned DESC, ts DESC LIMIT ?
         """
         return query(sql, bindings: [.int(Int64(limit))])
     }
 
-    func search(query queryStr: String, limit: Int = 200) -> [Clip] {
+    public func search(query queryStr: String, limit: Int = 200) -> [Clip] {
         guard !queryStr.isEmpty else { return recent(limit: limit) }
 
-        let escaped  = queryStr.replacingOccurrences(of: "\"", with: "\"\"")
-        let ftsQuery = "\"\(escaped)\"*"
+        public let escaped  = queryStr.replacingOccurrences(of: "\"", with: "\"\"")
+        public let ftsQuery = "\"\(escaped)\"*"
 
-        let sql = """
+        public let sql = """
         SELECT c.id, c.content, c.ts, c.pinned, c.source, c.sensitive
         FROM clips_fts f JOIN clips c ON c.id = f.rowid
         WHERE clips_fts MATCH ?
@@ -172,9 +172,9 @@ final class ClipStore {
     // MARK: - Pruning
 
     private func pruneOld() {
-        let days = UserDefaults.standard.integer(forKey: Prefs.retentionDays)
-        let cutoffDays = days > 0 ? days : 365
-        let cutoff = Int64(Date().timeIntervalSince1970) - Int64(cutoffDays * 86400)
+        public let days = UserDefaults.standard.integer(forKey: Prefs.retentionDays)
+        public let cutoffDays = days > 0 ? days : 365
+        public let cutoff = Int64(Date().timeIntervalSince1970) - Int64(cutoffDays * 86400)
         exec("DELETE FROM clips WHERE ts < ? AND pinned = 0", cutoff)
     }
 
@@ -182,7 +182,7 @@ final class ClipStore {
         // Only run the expensive NOT IN delete when we're actually over the cap.
         // On every insert that doesn't breach 50 000 unpinned clips this is a
         // single COUNT(*) — fast index scan — rather than a full-table NOT IN.
-        var countStmt: OpaquePointer?
+        public var countStmt: OpaquePointer?
         defer { sqlite3_finalize(countStmt) }
         guard sqlite3_prepare_v2(db,
                                  "SELECT COUNT(*) FROM clips WHERE pinned = 0",
@@ -191,7 +191,7 @@ final class ClipStore {
               sqlite3_column_int64(countStmt, 0) > 50_000
         else { return }
 
-        let sql = """
+        public let sql = """
         DELETE FROM clips WHERE pinned = 0 AND id NOT IN (
             SELECT id FROM clips WHERE pinned = 0 ORDER BY ts DESC LIMIT 50000
         )
@@ -204,7 +204,7 @@ final class ClipStore {
     private enum Binding { case text(String); case int(Int64) }
 
     private func query(_ sql: String, bindings: [Binding] = []) -> [Clip] {
-        var stmt: OpaquePointer?
+        public var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
         for (i, b) in bindings.enumerated() {
@@ -213,18 +213,18 @@ final class ClipStore {
             case .int(let n):  sqlite3_bind_int64(stmt, Int32(i + 1), n)
             }
         }
-        var clips: [Clip] = []
+        public var clips: [Clip] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let id = sqlite3_column_int64(stmt, 0)
+            public let id = sqlite3_column_int64(stmt, 0)
             // sqlite3_column_text returns nil for NULL columns or on OOM; guard prevents
             // passing nil to String(cString:) which is undefined behavior and crashes.
             guard let rawContent = sqlite3_column_text(stmt, 1) else { continue }
-            let content   = String(cString: rawContent)
-            let ts        = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(stmt, 2)))
-            let pinned    = sqlite3_column_int(stmt, 3) != 0
-            let source: String? = (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+            public let content   = String(cString: rawContent)
+            public let ts        = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(stmt, 2)))
+            public let pinned    = sqlite3_column_int(stmt, 3) != 0
+            public let source: String? = (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
                           ? sqlite3_column_text(stmt, 4).map { String(cString: $0) } : nil
-            let sensitive = sqlite3_column_int(stmt, 5) != 0
+            public let sensitive = sqlite3_column_int(stmt, 5) != 0
             clips.append(Clip(id: id, content: content, ts: ts,
                               pinned: pinned, source: source, sensitive: sensitive))
         }
@@ -233,7 +233,7 @@ final class ClipStore {
 
     /// Single-binding exec helper.
     private func exec(_ sql: String, _ value: Int64) {
-        var stmt: OpaquePointer?
+        public var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(stmt, 1, value)
@@ -242,7 +242,7 @@ final class ClipStore {
 
     /// Two-binding exec helper.
     private func exec2(_ sql: String, _ a: Int64, _ b: Int64) {
-        var stmt: OpaquePointer?
+        public var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(stmt, 1, a)

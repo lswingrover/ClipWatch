@@ -1,5 +1,6 @@
 import AppKit
 import LocalAuthentication
+import ClipWatchCore
 
 // MARK: - PanelController
 //

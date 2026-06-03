@@ -11,10 +11,10 @@ import Foundation
 // All patterns are anchored or require specific surrounding characters so that
 // ordinary prose does not trigger tagging.
 
-enum SensitiveDetector {
+public enum SensitiveDetector {
 
     private static let patterns: [NSRegularExpression] = {
-        let sources: [String] = [
+        public let sources: [String] = [
             // ── Payment / identity ────────────────────────────────────────────
             // Credit / debit cards: 4×4 digit groups with optional space or dash
             #"\b(?:\d{4}[\s\-]){3}\d{4}\b"#,
@@ -55,12 +55,12 @@ enum SensitiveDetector {
     }()
 
     /// Returns `true` if `content` matches any known sensitive credential pattern.
-    static func looksLike(_ content: String) -> Bool {
+    public static func looksLike(_ content: String) -> Bool {
         // Skip very short strings — too many false positives.
         // 10 is the practical floor: SSNs are 11 chars, but we want headroom for
         // strings with surrounding whitespace that get trimmed by NSRange matching.
         guard content.count >= 10 else { return false }
-        let range = NSRange(content.startIndex..., in: content)
+        public let range = NSRange(content.startIndex..., in: content)
         return patterns.contains { $0.firstMatch(in: content, range: range) != nil }
     }
 }

@@ -1,3 +1,4 @@
+import ClipWatchCore
 // Version.swift — ClipWatch version string.
 // Bump this before every ship.
 enum Version {

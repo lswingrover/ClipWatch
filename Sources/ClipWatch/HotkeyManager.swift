@@ -1,4 +1,5 @@
 import AppKit
+import ClipWatchCore
 
 // MARK: - HotkeyManager
 //
