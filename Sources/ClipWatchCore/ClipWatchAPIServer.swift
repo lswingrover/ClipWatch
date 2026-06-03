@@ -1,119 +1,97 @@
 /// ClipWatchAPIServer.swift — Localhost HTTP API for ClipWatch headless/AI administration
 ///
-/// Exposes a JSON API on 127.0.0.1:57822 (configurable).
-/// Allows Claude companion skills and other AI tools to search, read, pin, and
-/// delete clipboard history without needing the panel UI open.
-///
-/// Port suite: MacWatch=57820  NetWatch=57821 (existing)  ClipWatch=57822
+/// Port suite: MacWatch=57820  NetWatch=57821  ClipWatch=57822
 ///
 /// Endpoints:
-///   GET /ping              → {"pong": true}
-///   GET /health            → db path, clip count, db size
-///   GET /clips?limit=N     → most recent N clips (default 50, max 500)
-///   GET /search?q=TEXT     → FTS5 full-text search (limit=200)
-///   GET /clip?id=N         → single clip by rowid
-///   GET /pin?id=N          → toggle pin on clip N (returns updated clip)
-///   GET /delete?id=N       → delete clip N (returns {"deleted":true})
-///   GET /sensitive         → all clips flagged as sensitive
+///   GET /ping              → {"pong":true, "locked":bool, ...}
+///   GET /health            → db path, clip count, lock state, db size
+///   GET /lock              → lock ClipWatch immediately; returns {"locked":true}
+///   GET /clips?limit=N     → recent N clips (locked: 423)
+///   GET /search?q=TEXT     → FTS5 full-text search (locked: 423)
+///   GET /clip?id=N         → single clip by rowid (locked: 423)
+///   GET /pin?id=N          → toggle pin (locked: 423)
+///   GET /delete?id=N       → delete clip (locked: 423)
+///   GET /sensitive         → clips flagged sensitive (locked: 423)
 ///
-/// Security: binds to 127.0.0.1 (loopback) only. Never accessible remotely.
-/// Auth: none — local-only, Claude/AI is the consumer.
-///
-/// Wiring: AppDelegate owns `let apiServer = ClipWatchAPIServer()`.
-///   Start: call `apiServer.start()` in applicationDidFinishLaunching.
-///   Stop:  call `apiServer.stop()` in applicationWillTerminate.
-///
-/// GH: lswingrover/clipwatch#XX (headless API server)
+/// Security: binds 127.0.0.1 only. Unlock requires Touch ID from the UI —
+/// the API intentionally cannot unlock (biometrics need user interaction).
+
 import Foundation
 import Network
 
 // MARK: - Payload types
 
 public struct CWAPIHealthPayload: Codable {
-    let running:    Bool
-    let clipCount:  Int
-    let dbPath:     String
-    let dbSizeKB:   Int64
-    let port:       UInt16
-    public init(running: Bool, clipCount: Int, dbPath: String, dbSizeKB: Int64, port: UInt16) {
-        self.running = running
-        self.clipCount = clipCount
-        self.dbPath = dbPath
-        self.dbSizeKB = dbSizeKB
-        self.port = port
+    let running:           Bool
+    let locked:            Bool
+    let secureModeEnabled: Bool
+    let clipCount:         Int
+    let dbPath:            String
+    let dbSizeKB:          Int64
+    let port:              UInt16
+
+    public init(running: Bool, locked: Bool, secureModeEnabled: Bool,
+                clipCount: Int, dbPath: String, dbSizeKB: Int64, port: UInt16) {
+        self.running           = running
+        self.locked            = locked
+        self.secureModeEnabled = secureModeEnabled
+        self.clipCount         = clipCount
+        self.dbPath            = dbPath
+        self.dbSizeKB          = dbSizeKB
+        self.port              = port
     }
 }
 
 public struct CWAPIClip: Codable {
     let id:        Int64
     let content:   String
-    let ts:        String   // ISO8601
+    let ts:        String
     let pinned:    Bool
-    let source:    String?  // bundle ID of source app
+    let source:    String?
     let sensitive: Bool
-    let preview:   String   // first 120 chars, whitespace-collapsed
-    public init(id: Int64, content: String, ts: String, pinned: Bool, source: String? = nil, sensitive: Bool, preview: String) {
-        self.id = id
-        self.content = content
-        self.ts = ts
-        self.pinned = pinned
-        self.source = source
-        self.sensitive = sensitive
-        self.preview = preview
+    let preview:   String
+
+    public init(id: Int64, content: String, ts: String, pinned: Bool,
+                source: String? = nil, sensitive: Bool, preview: String) {
+        self.id = id; self.content = content; self.ts = ts
+        self.pinned = pinned; self.source = source
+        self.sensitive = sensitive; self.preview = preview
     }
 }
 
 public struct CWAPISearchResult: Codable {
-    let query:   String
-    let count:   Int
-    let results: [CWAPIClip]
+    let query: String; let count: Int; let results: [CWAPIClip]
     public init(query: String, count: Int, results: [CWAPIClip]) {
-        self.query = query
-        self.count = count
-        self.results = results
+        self.query = query; self.count = count; self.results = results
     }
 }
 
 public struct CWAPIMutationResult: Codable {
-    let success: Bool
-    let id:      Int64
-    let action:  String
+    let success: Bool; let id: Int64; let action: String
     public init(success: Bool, id: Int64, action: String) {
-        self.success = success
-        self.id = id
-        self.action = action
+        self.success = success; self.id = id; self.action = action
     }
 }
 
 // MARK: - Server
 
 public final class ClipWatchAPIServer {
-
-    // MARK: - State
     private var listener:    NWListener?
     private var connections: [NWConnection] = []
     public private(set) var isRunning: Bool = false
     public var port: UInt16 = 57_822
 
-    // MARK: - Start / Stop
-
     public func start() {
         guard !isRunning else { return }
         let params = NWParameters.tcp
         params.allowLocalEndpointReuse = true
-        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            print("[ClipWatchAPI] Invalid port \(port)")
-            return
-        }
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
         do {
             listener = try NWListener(using: params, on: nwPort)
         } catch {
-            print("[ClipWatchAPI] Failed to create listener: \(error)")
-            return
+            print("[ClipWatchAPI] Failed to create listener: \(error)"); return
         }
-        listener?.newConnectionHandler = { [weak self] conn in
-            self?.acceptConnection(conn)
-        }
+        listener?.newConnectionHandler = { [weak self] conn in self?.acceptConnection(conn) }
         listener?.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
@@ -129,31 +107,21 @@ public final class ClipWatchAPIServer {
     }
 
     public func stop() {
-        listener?.cancel()
-        listener = nil
-        connections.forEach { $0.cancel() }
-        connections.removeAll()
+        listener?.cancel(); listener = nil
+        connections.forEach { $0.cancel() }; connections.removeAll()
         isRunning = false
     }
 
-    // MARK: - Connection handling
-
     private func acceptConnection(_ connection: NWConnection) {
-        // Dispatch connection list mutations to main to stay thread-safe
         DispatchQueue.main.async { self.connections.append(connection) }
         connection.start(queue: DispatchQueue(label: "clipwatch.api.conn", qos: .utility))
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, _, _ in
             guard let data, let request = String(data: data, encoding: .utf8) else {
                 connection.cancel()
-                DispatchQueue.main.async {
-                    self?.connections.removeAll { $0 === connection }
-                }
+                DispatchQueue.main.async { self?.connections.removeAll { $0 === connection } }
                 return
             }
-            // Route on main: ClipStore is not thread-safe for writes
-            DispatchQueue.main.async {
-                self?.handleRequest(request, connection: connection)
-            }
+            DispatchQueue.main.async { self?.handleRequest(request, connection: connection) }
         }
     }
 
@@ -161,153 +129,140 @@ public final class ClipWatchAPIServer {
         let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
         let parts     = firstLine.components(separatedBy: " ")
         guard parts.count >= 2, parts[0] == "GET" else {
-            sendResponse(connection: connection, status: 405,
-                         body: #"{"error":"Method Not Allowed"}"#)
+            sendResponse(connection: connection, status: 405, body: #"{"error":"Method Not Allowed"}"#)
             return
         }
         let fullPath = parts[1]
         let path     = fullPath.components(separatedBy: "?").first ?? fullPath
-        let query    = fullPath.contains("?")
-                       ? fullPath.components(separatedBy: "?")[1] : ""
+        let query    = fullPath.contains("?") ? fullPath.components(separatedBy: "?")[1] : ""
         let (status, body) = route(path: path, query: query)
         sendResponse(connection: connection, status: status, body: body)
         connections.removeAll { $0 === connection }
     }
-
-    // MARK: - Routing
 
     private func route(path: String, query: String) -> (Int, String) {
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
         enc.outputFormatting     = .prettyPrinted
 
-        switch path {
+        let isLocked = Prefs.isSecureModeEnabled() && LockManager.shared.isLocked
 
+        switch path {
         case "/ping":
-            return (200, #"{"pong":true,"app":"ClipWatch","port":57822}"#)
+            return (200, """
+                {"pong":true,"app":"ClipWatch","port":57822,\
+                "locked":\(isLocked),"secureModeEnabled":\(Prefs.isSecureModeEnabled())}
+                """)
 
         case "/", "/health":
-            return handleHealth(encoder: enc)
+            return handleHealth(encoder: enc, isLocked: isLocked)
 
-        case "/clips":
-            let limit = Int(queryParam("limit", from: query)) ?? 50
-            let clips = ClipStore.shared.recent(limit: min(limit, 500))
-            return encode(clips.map(apiClip), encoder: enc)
+        case "/lock":
+            LockManager.shared.lock()
+            return (200, #"{"locked":true,"action":"locked"}"#)
 
-        case "/search":
-            let q     = queryParam("q", from: query)
-            guard !q.isEmpty else {
-                return (400, #"{"error":"Missing ?q= parameter"}"#)
+        case "/clips", "/search", "/clip", "/pin", "/delete", "/sensitive":
+            if isLocked {
+                return (423, #"{"error":"ClipWatch is locked","hint":"Unlock via the menu bar or Touch ID"}"#)
             }
-            let limit   = Int(queryParam("limit", from: query)) ?? 200
-            let results = ClipStore.shared.search(query: q, limit: min(limit, 500))
-            let payload = CWAPISearchResult(query: q, count: results.count,
-                                            results: results.map(apiClip))
-            return encode(payload, encoder: enc)
-
-        case "/clip":
-            let id = Int64(queryParam("id", from: query)) ?? -1
-            guard id > 0 else {
-                return (400, #"{"error":"Missing or invalid ?id= parameter"}"#)
-            }
-            // Fetch by ID via a single-item search isn't supported directly;
-            // use recent + filter as a lightweight fallback.
-            let results = ClipStore.shared.recent(limit: 50_000)
-            guard let clip = results.first(where: { $0.id == id }) else {
-                return (404, #"{"error":"Clip not found"}"#)
-            }
-            return encode(apiClip(clip), encoder: enc)
-
-        case "/pin":
-            let id = Int64(queryParam("id", from: query)) ?? -1
-            guard id > 0 else {
-                return (400, #"{"error":"Missing or invalid ?id= parameter"}"#)
-            }
-            ClipStore.shared.togglePin(id: id)
-            let result = CWAPIMutationResult(success: true, id: id, action: "pin_toggled")
-            return encode(result, encoder: enc)
-
-        case "/delete":
-            let id = Int64(queryParam("id", from: query)) ?? -1
-            guard id > 0 else {
-                return (400, #"{"error":"Missing or invalid ?id= parameter"}"#)
-            }
-            ClipStore.shared.delete(id: id)
-            let result = CWAPIMutationResult(success: true, id: id, action: "deleted")
-            return encode(result, encoder: enc)
-
-        case "/sensitive":
-            // Recent clips filtered to sensitive flag
-            let all       = ClipStore.shared.recent(limit: 50_000)
-            let sensitive = all.filter { $0.sensitive }
-            return encode(sensitive.map(apiClip), encoder: enc)
+            LockManager.shared.touchActivity()
+            return routeData(path: path, query: query, encoder: enc)
 
         default:
             return (404, """
-                {"error":"Not found",\
-                "endpoints":["/ping","/health","/clips","/search?q=X",\
-                "/clip?id=N","/pin?id=N","/delete?id=N","/sensitive"]}
+                {"error":"Not found","endpoints":["/ping","/health","/lock",\
+                "/clips","/search?q=X","/clip?id=N","/pin?id=N","/delete?id=N","/sensitive"]}
                 """)
         }
     }
 
-    // MARK: - /health
+    private func routeData(path: String, query: String, encoder: JSONEncoder) -> (Int, String) {
+        switch path {
+        case "/clips":
+            let limit = Int(queryParam("limit", from: query)) ?? 50
+            return encode(ClipStore.shared.recent(limit: min(limit, 500)).map(apiClip), encoder: encoder)
 
-    private func handleHealth(encoder: JSONEncoder) -> (Int, String) {
+        case "/search":
+            let q = queryParam("q", from: query)
+            guard !q.isEmpty else { return (400, #"{"error":"Missing ?q= parameter"}"#) }
+            let limit   = Int(queryParam("limit", from: query)) ?? 200
+            let results = ClipStore.shared.search(query: q, limit: min(limit, 500))
+            return encode(CWAPISearchResult(query: q, count: results.count,
+                                             results: results.map(apiClip)), encoder: encoder)
+
+        case "/clip":
+            let id = Int64(queryParam("id", from: query)) ?? -1
+            guard id > 0 else { return (400, #"{"error":"Missing or invalid ?id= parameter"}"#) }
+            guard let clip = ClipStore.shared.recent(limit: 50_000).first(where: { $0.id == id })
+            else { return (404, #"{"error":"Clip not found"}"#) }
+            return encode(apiClip(clip), encoder: encoder)
+
+        case "/pin":
+            let id = Int64(queryParam("id", from: query)) ?? -1
+            guard id > 0 else { return (400, #"{"error":"Missing or invalid ?id= parameter"}"#) }
+            ClipStore.shared.togglePin(id: id)
+            return encode(CWAPIMutationResult(success: true, id: id, action: "pin_toggled"), encoder: encoder)
+
+        case "/delete":
+            let id = Int64(queryParam("id", from: query)) ?? -1
+            guard id > 0 else { return (400, #"{"error":"Missing or invalid ?id= parameter"}"#) }
+            ClipStore.shared.delete(id: id)
+            return encode(CWAPIMutationResult(success: true, id: id, action: "deleted"), encoder: encoder)
+
+        case "/sensitive":
+            let all = ClipStore.shared.recent(limit: 50_000)
+            return encode(all.filter { $0.sensitive }.map(apiClip), encoder: encoder)
+
+        default:
+            return (404, #"{"error":"Not found"}"#)
+        }
+    }
+
+    private func handleHealth(encoder: JSONEncoder, isLocked: Bool) -> (Int, String) {
         let dbPath = (FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?.appendingPathComponent("ClipWatch/clips.db").path) ?? "unknown"
-        let dbSize = (try? FileManager.default.attributesOfItem(atPath: dbPath)[.size] as? Int64) ?? 0
-        let count  = ClipStore.shared.recent(limit: 1_000_000).count  // approximate
+        let dbSize  = (try? FileManager.default.attributesOfItem(atPath: dbPath)[.size] as? Int64) ?? 0
+        let count   = ClipStore.shared.recent(limit: 1_000_000).count
         let payload = CWAPIHealthPayload(
-            running:   true,
-            clipCount: count,
-            dbPath:    dbPath,
-            dbSizeKB:  dbSize / 1024,
-            port:      port
+            running:           true,
+            locked:            isLocked,
+            secureModeEnabled: Prefs.isSecureModeEnabled(),
+            clipCount:         count,
+            dbPath:            dbPath,
+            dbSizeKB:          dbSize / 1024,
+            port:              port
         )
         return encode(payload, encoder: encoder)
     }
 
-    // MARK: - Helpers
-
     private func apiClip(_ clip: ClipStore.Clip) -> CWAPIClip {
-        let fmt     = ISO8601DateFormatter()
         let preview = clip.content
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .prefix(120)
-        return CWAPIClip(
-            id:        clip.id,
-            content:   clip.content,
-            ts:        fmt.string(from: clip.ts),
-            pinned:    clip.pinned,
-            source:    clip.source,
-            sensitive: clip.sensitive,
-            preview:   String(preview)
-        )
+        return CWAPIClip(id: clip.id, content: clip.content,
+                         ts: ISO8601DateFormatter().string(from: clip.ts),
+                         pinned: clip.pinned, source: clip.source,
+                         sensitive: clip.sensitive, preview: String(preview))
     }
 
     private func sendResponse(connection: NWConnection, status: Int, body: String) {
         let statusText: String = {
             switch status {
-            case 200: return "OK"
-            case 400: return "Bad Request"
-            case 404: return "Not Found"
-            case 405: return "Method Not Allowed"
-            default:  return "Error"
+            case 200: return "OK"; case 400: return "Bad Request"
+            case 404: return "Not Found"; case 405: return "Method Not Allowed"
+            case 423: return "Locked"; default: return "Error"
             }
         }()
         let response = "HTTP/1.1 \(status) \(statusText)\r\n" +
                        "Content-Type: application/json\r\n" +
                        "Content-Length: \(body.utf8.count)\r\n" +
                        "Access-Control-Allow-Origin: *\r\n" +
-                       "Connection: close\r\n\r\n" +
-                       body
+                       "Connection: close\r\n\r\n" + body
         guard let data = response.data(using: .utf8) else { connection.cancel(); return }
-        connection.send(content: data,
-                        completion: .contentProcessed { _ in connection.cancel() })
+        connection.send(content: data, completion: .contentProcessed { _ in connection.cancel() })
     }
 
     private func encode<T: Encodable>(_ value: T, encoder: JSONEncoder) -> (Int, String) {
@@ -328,7 +283,6 @@ public final class ClipWatchAPIServer {
         }
         return ""
     }
-    public init(port: UInt16 = 57_822) {
-        self.port = port
-    }
+
+    public init(port: UInt16 = 57_822) { self.port = port }
 }

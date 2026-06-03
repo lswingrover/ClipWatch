@@ -4,45 +4,53 @@ import ClipWatchCore
 // MARK: - AppDelegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-
     // Accessible from PanelController's paste callback
     static weak var shared: AppDelegate?
 
     private let store     = ClipStore.shared
-    // HEADLESS: localhost HTTP API for Claude/AI administration (GH#XX)
     private let apiServer = ClipWatchAPIServer()
-    let monitor          = ClipboardMonitor()
-    private let hotkey   = HotkeyManager()
-    private let panel    = PanelController()
+    let monitor           = ClipboardMonitor()
+    private let hotkey    = HotkeyManager()
+    private let panel     = PanelController()
 
-    private var statusItem:          NSStatusItem!
-    private var pendingUpdate:       UpdateInfo?
-    private var menuRebuildTimer:    Timer?
+    private var statusItem:       NSStatusItem!
+    private var pendingUpdate:    UpdateInfo?
+    private var menuRebuildTimer: Timer?
 
     // MARK: - Launch
 
     func applicationDidFinishLaunching(_ note: Notification) {
         AppDelegate.shared = self
-
         setupStatusItem()
         monitor.start()
-
         hotkey.onActivate = { [weak self] in self?.panel.toggle() }
         hotkey.start()
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(rebuildMenu),
-            name: .clipStoreDidChange,
-            object: nil
-        )
+        // Clipboard + update notifications
+        NotificationCenter.default.addObserver(self, selector: #selector(rebuildMenu),
+            name: .clipStoreDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateAvailable(_:)),
+            name: .updateAvailable, object: nil)
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(updateAvailable(_:)),
-            name: .updateAvailable,
-            object: nil
-        )
+        // Lock state → update icon + menu
+        NotificationCenter.default.addObserver(self, selector: #selector(didLock),
+            name: .clipWatchDidLock, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(didUnlock),
+            name: .clipWatchDidUnlock, object: nil)
+
+        // Screen sleep / wake — ties ClipWatch to the system lock cycle,
+        // matching the 1Password "Lock when device locks or sleeps" behaviour.
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(self, selector: #selector(screenDidSleep),
+            name: NSWorkspace.screensDidSleepNotification, object: nil)
+        ws.addObserver(self, selector: #selector(screenDidWake),
+            name: NSWorkspace.screensDidWakeNotification, object: nil)
+        // Fast user switching
+        ws.addObserver(self, selector: #selector(screenDidSleep),
+            name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        ws.addObserver(self, selector: #selector(screenDidWake),
+            name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+
         UpdateChecker.checkInBackground()
         apiServer.start()
     }
@@ -51,21 +59,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apiServer.stop()
     }
 
+    // MARK: - Screen sleep / wake
+
+    @objc private func screenDidSleep() {
+        guard Prefs.lockOnSleepEnabled() else { return }
+        LockManager.shared.lock()
+    }
+
+    @objc private func screenDidWake() {
+        // Silently re-unlock if the keychain token is still readable and the
+        // unlock window has not expired — same pattern as 1Password on wake.
+        LockManager.shared.checkKeychainUnlock()
+    }
+
+    // MARK: - Lock state → UI
+
+    @objc private func didLock()   { updateStatusIcon(); rebuildMenu() }
+    @objc private func didUnlock() { updateStatusIcon(); rebuildMenu() }
+
+    private func updateStatusIcon() {
+        let isLocked = Prefs.isSecureModeEnabled() && LockManager.shared.isLocked
+        let name = isLocked ? "lock.fill" : "doc.on.clipboard"
+        statusItem.button?.image = NSImage(systemSymbolName: name,
+                                           accessibilityDescription: "ClipWatch")
+        statusItem.button?.image?.isTemplate = true
+    }
+
     // MARK: - Status Item
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let btn = statusItem.button {
-            btn.image = NSImage(systemSymbolName: "doc.on.clipboard",
-                                accessibilityDescription: "ClipWatch")
-            btn.image?.isTemplate = true
-        }
+        updateStatusIcon()
         buildMenu()
     }
 
     @objc func rebuildMenu() {
-        // Debounce: coalesce rapid clipStoreDidChange notifications (e.g. programmatic
-        // bulk pastes) into a single menu rebuild 200 ms after the last event.
         menuRebuildTimer?.invalidate()
         menuRebuildTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
             self?.buildMenu()
@@ -74,78 +102,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let menu   = NSMenu()
+        let locked = Prefs.isSecureModeEnabled() && LockManager.shared.isLocked
 
-        // Update banner — appears only when a newer release is available
+        // Update banner
         if let update = pendingUpdate {
-            let updateItem = NSMenuItem(
-                title:  "⬆ Update available: v\(update.tagName)",
-                action: #selector(openUpdatePage),
-                keyEquivalent: ""
-            )
-            updateItem.target = self
-            menu.addItem(updateItem)
+            let item = NSMenuItem(title: "⬆ Update available: v\(update.tagName)",
+                                  action: #selector(openUpdatePage), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
             menu.addItem(.separator())
         }
 
-        let clips  = store.recent(limit: Prefs.menuCount())
+        if locked {
+            // ── Locked state ──────────────────────────────────────────────
+            let lockLabel = NSMenuItem(title: "ClipWatch is Locked", action: nil, keyEquivalent: "")
+            lockLabel.isEnabled = false
+            menu.addItem(lockLabel)
 
-        for clip in clips {
-            let preview = clip.content
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-                .prefix(60)
-            let item = NSMenuItem(
-                title:  String(preview),
-                action: #selector(menuClipClicked(_:)),
-                keyEquivalent: ""
-            )
-            item.representedObject = clip.content
-            item.target = self
-            if clip.pinned {
-                item.image = NSImage(systemSymbolName: "pin.fill",
-                                     accessibilityDescription: nil)
+            let unlockItem = NSMenuItem(title: "Unlock…",
+                                        action: #selector(unlockFromMenu),
+                                        keyEquivalent: "")
+            unlockItem.target = self
+            menu.addItem(unlockItem)
+        } else {
+            // ── Unlocked: show clips ───────────────────────────────────────
+            let clips = store.recent(limit: Prefs.menuCount())
+            for clip in clips {
+                let preview = clip.content
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                    .prefix(60)
+                let item = NSMenuItem(
+                    title:  String(preview),
+                    action: #selector(menuClipClicked(_:)),
+                    keyEquivalent: ""
+                )
+                item.representedObject = clip.content
+                item.target = self
+                if clip.pinned {
+                    item.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: nil)
+                }
+                menu.addItem(item)
             }
-            menu.addItem(item)
-        }
-
-        if clips.isEmpty {
-            let empty = NSMenuItem(title: "No clips yet", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
+            if clips.isEmpty {
+                let empty = NSMenuItem(title: "No clips yet", action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                menu.addItem(empty)
+            }
         }
 
         menu.addItem(.separator())
-        let clearItem = NSMenuItem(title: "Clear History…",
-                                   action: #selector(clearAllHistory),
-                                   keyEquivalent: "")
-        clearItem.target = self
-        menu.addItem(clearItem)
-        menu.addItem(.separator())
+
+        // Lock Now — only when secure mode is on and currently unlocked
+        if Prefs.isSecureModeEnabled() && !locked {
+            let lockItem = NSMenuItem(title: "Lock Now",
+                                      action: #selector(lockNow),
+                                      keyEquivalent: "l")
+            lockItem.keyEquivalentModifierMask = [.command, .shift]
+            lockItem.target = self
+            menu.addItem(lockItem)
+            menu.addItem(.separator())
+        }
+
+        if !locked {
+            let clearItem = NSMenuItem(title: "Clear History…",
+                                       action: #selector(clearAllHistory),
+                                       keyEquivalent: "")
+            clearItem.target = self
+            menu.addItem(clearItem)
+            menu.addItem(.separator())
+        }
+
         let prefs = NSMenuItem(title: "Preferences…",
-                               action: #selector(openPreferences),
-                               keyEquivalent: ",")
+                               action: #selector(openPreferences), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
+
         let ghItem = NSMenuItem(title: "View on GitHub",
-                                action: #selector(openGitHub),
-                                keyEquivalent: "")
+                                action: #selector(openGitHub), keyEquivalent: "")
         ghItem.target = self
         menu.addItem(ghItem)
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ClipWatch",
-                     action: #selector(NSApplication.terminate(_:)),
-                     keyEquivalent: "q")
+                     action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
     }
 
+    // MARK: - Menu actions
+
     @objc private func menuClipClicked(_ sender: NSMenuItem) {
         guard let content = sender.representedObject as? String else { return }
-        // Menu item click: dismiss menu first, then paste
+        LockManager.shared.touchActivity()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             self.paste(content)
+        }
+    }
+
+    @objc private func lockNow() {
+        LockManager.shared.lock()
+    }
+
+    @objc private func unlockFromMenu() {
+        LockManager.shared.tryUnlock(reason: "Unlock ClipWatch clipboard history") { [weak self] success in
+            if success { self?.rebuildMenu() }
         }
     }
 
@@ -155,7 +218,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openGitHub() {
-        // Guard prevents crash if URL(string:) ever returns nil (malformed constant).
         guard let url = URL(string: "https://github.com/lswingrover/clipwatch") else { return }
         NSWorkspace.shared.open(url)
     }
@@ -186,38 +248,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Paste
 
-    /// Places `content` on the general pasteboard, then posts a synthetic ⌘V
-    /// `CGEvent` to the HID event tap so it pastes into whatever app was
-    /// frontmost before ClipWatch was invoked.
-    ///
-    /// Call sites must ensure a delay of ≥120 ms has elapsed since the panel
-    /// or menu was dismissed. Without the delay, ClipWatch's window may still
-    /// own focus when the event fires and ⌘V pastes into nothing.
-    ///
-    /// This requires Accessibility permission (`AXIsProcessTrusted()`).
-    /// HotkeyManager prompts for it on launch; if the user never grants it,
-    /// the content is still written to the pasteboard — the user just has to
-    /// press ⌘V themselves.
     func paste(_ content: String) {
         NSPasteboard.general.clearContents()
-        // setString returns false if the pasteboard is unavailable (e.g. sandboxed denial).
-        // Abort rather than synthesizing ⌘V that would paste stale/empty content.
         guard NSPasteboard.general.setString(content, forType: .string) else {
             print("ClipWatch: pasteboard write failed — aborting paste")
             return
         }
-
         let src     = CGEventSource(stateID: .combinedSessionState)
-        let vKey: CGKeyCode = 9   // kVK_ANSI_V  (Carbon virtual key code for V)
+        let vKey: CGKeyCode = 9
         guard
             let down = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true),
             let up   = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: false)
         else { return }
-
         down.flags = .maskCommand
         up.flags   = .maskCommand
-        // cghidEventTap injects into the hardware event stream, reaching the
-        // frontmost app without going through the event tap filter chain.
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
     }

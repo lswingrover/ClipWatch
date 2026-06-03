@@ -57,11 +57,15 @@ final class PreferencesViewController: NSViewController {
     private var loginToggle:         NSButton!
     private var secureModeToggle:    NSButton!
     private var unlockDurationPopup: NSPopUpButton!
+    private var lockOnSleepToggle:    NSButton!
+    private var idleLockPopup:        NSPopUpButton!
     private var excludedTable:       NSTableView!
     private var items:               [ExclusionItem] = []
 
     private let unlockDurationValues = [0, 300, 900, 1800, 3600, -1]
     private let unlockDurationLabels = ["Every use", "5 minutes", "15 minutes", "30 minutes", "1 hour", "Until app restarts"]
+    private let idleLockValues = [0, 1, 5, 10, 30, 60]
+    private let idleLockLabels = ["Never", "1 minute", "5 minutes", "10 minutes", "30 minutes", "1 hour"]
 
     private let margin: CGFloat     = 20
     private let labelWidth: CGFloat = 180
@@ -165,6 +169,20 @@ final class PreferencesViewController: NSViewController {
         unlockDurationPopup.target = self
         unlockDurationPopup.action = #selector(unlockDurationChanged)
         controlsStack.addArrangedSubview(makeRow("Stay unlocked for", unlockDurationPopup))
+
+        // Auto-lock subsection (mirrors 1Password's Auto-lock section)
+        controlsStack.addArrangedSubview(sectionHeader("Auto-lock"))
+        lockOnSleepToggle = NSButton(
+            checkboxWithTitle: "Lock when device locks or sleeps",
+            target: self, action: #selector(lockOnSleepToggled)
+        )
+        controlsStack.addArrangedSubview(lockOnSleepToggle)
+
+        idleLockPopup = NSPopUpButton()
+        for label in idleLockLabels { idleLockPopup.addItem(withTitle: label) }
+        idleLockPopup.target = self
+        idleLockPopup.action = #selector(idleLockChanged)
+        controlsStack.addArrangedSubview(makeRow("Lock after idle for", idleLockPopup))
         controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
 
         // Data
@@ -369,6 +387,17 @@ final class PreferencesViewController: NSViewController {
 
     @objc private func secureModeToggled() {
         UserDefaults.standard.set(secureModeToggle.state == .on, forKey: Prefs.secureMode)
+        LockManager.shared.secureModeDidChange()
+    }
+
+    @objc private func lockOnSleepToggled() {
+        UserDefaults.standard.set(lockOnSleepToggle.state == .on, forKey: Prefs.lockOnSleep)
+    }
+
+    @objc private func idleLockChanged() {
+        let idx = idleLockPopup.indexOfSelectedItem
+        guard idx >= 0, idx < idleLockValues.count else { return }
+        UserDefaults.standard.set(idleLockValues[idx], forKey: Prefs.idleLockMinutes)
     }
 
     @objc private func unlockDurationChanged() {
