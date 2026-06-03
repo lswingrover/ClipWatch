@@ -1,0 +1,8 @@
+{
+  "name": "clipwatch-companion",
+  "version": "1.0.0",
+  "description": "AI skills for ClipWatch — analyze clipboard history, search clips, pin items, and delete sensitive content. Requires ClipWatch running on this Mac (localhost:57822).",
+  "author": {
+    "name": "Louis Swingrover"
+  }
+}
