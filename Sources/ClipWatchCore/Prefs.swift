@@ -25,52 +25,55 @@ public enum Prefs {
         "com.lastpass.LastPass",
     ]
 
+    // Injectable UserDefaults — override in unit tests to avoid polluting UserDefaults.standard.
+    // Production code always uses the default (.standard). Tests swap this per-suite.
+    public static var defaults: UserDefaults = .standard
+
     public static func menuCount() -> Int {
-        let v = UserDefaults.standard.integer(forKey: menuItemCount)
+        let v = defaults.integer(forKey: menuItemCount)
         return (v >= 5 && v <= 25) ? v : 10
     }
 
     public static func hotkeyVirtualKey() -> Int {
-        let v = UserDefaults.standard.integer(forKey: hotkeyKeyCode)
+        let v = defaults.integer(forKey: hotkeyKeyCode)
         return v > 0 ? v : 9  // default V
     }
 
     public static func hotkeyModifierFlags() -> Int {
-        let v = UserDefaults.standard.integer(forKey: hotkeyModifiers)
+        let v = defaults.integer(forKey: hotkeyModifiers)
         // default: option (524288) + command (1048576) = 1572864
         return v > 0 ? v : 1_572_864
     }
 
     public static func isSecureModeEnabled() -> Bool {
-        UserDefaults.standard.bool(forKey: secureMode)
+        defaults.bool(forKey: secureMode)
     }
 
     /// Seconds to stay unlocked after successful auth.
     /// 0 = authenticate every use; -1 = stay unlocked until app restarts.
     public static func unlockDurationSeconds() -> Int {
-        UserDefaults.standard.integer(forKey: unlockDuration)
+        defaults.integer(forKey: unlockDuration)
     }
 
     /// Whether to lock when the device sleeps or the screen locks. Default true.
     public static func lockOnSleepEnabled() -> Bool {
-        let ud = UserDefaults.standard
-        if ud.object(forKey: lockOnSleep) == nil { return true }  // default true
-        return ud.bool(forKey: lockOnSleep)
+        if defaults.object(forKey: lockOnSleep) == nil { return true }  // default true
+        return defaults.bool(forKey: lockOnSleep)
     }
 
     /// Minutes of ClipWatch inactivity before auto-locking. 0 = never (disabled).
     public static func idleLockIntervalMinutes() -> Int {
-        max(0, UserDefaults.standard.integer(forKey: idleLockMinutes))
+        max(0, defaults.integer(forKey: idleLockMinutes))
     }
 
     public static func screenMode() -> String {
-        let v = UserDefaults.standard.string(forKey: screenFocusMode) ?? ""
+        let v = defaults.string(forKey: screenFocusMode) ?? ""
         return v.isEmpty ? "activeApp" : v
     }
 
     /// Poll interval in seconds. Clamped to 0.5-5.0; defaults to 1.0 s.
     public static func pollIntervalSeconds() -> TimeInterval {
-        let v = UserDefaults.standard.double(forKey: pollInterval)
+        let v = defaults.double(forKey: pollInterval)
         return (v >= 0.5 && v <= 5.0) ? v : 1.0
     }
 }

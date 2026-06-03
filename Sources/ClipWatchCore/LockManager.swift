@@ -11,7 +11,7 @@ import Security
 //   - Keychain item (kSecAttrAccessibleWhenUnlocked) stores the last-unlock
 //     timestamp. Reading the item succeeds only when the macOS login keychain
 //     is unlocked (screen not locked). This ties ClipWatch to the system
-//     keychain, mirroring 1Password's vault protection model.
+//     keychain, mirroring 1Password vault protection model.
 //   - Screen sleep: AppDelegate checks Prefs.lockOnSleepEnabled() then calls
 //     lock(). Screen wake: AppDelegate calls checkKeychainUnlock() to silently
 //     re-unlock if the window is still valid and the keychain is readable.
@@ -21,16 +21,21 @@ import Security
 //
 // GH: lswingrover/clipwatch#2
 public final class LockManager {
+
     public static let shared = LockManager()
 
     // MARK: - State
-    public private(set) var isLocked: Bool
 
+    public private(set) var isLocked: Bool
     private var autoLockTimer: Timer?
     private var idleTimer:     Timer?
-
     private let keychainService = "com.louisswingrover.clipwatch"
     private let keychainAccount = "unlock-state"
+
+    // Overrides the idle-lock interval for unit tests (nil = use Prefs, production default).
+    // Setting this bypasses the minutes-based Prefs value so tests can use sub-second
+    // intervals without waiting 60+ seconds for a timer to fire.
+    public var idleLockSecondsOverride: TimeInterval? = nil
 
     private init() {
         isLocked = Prefs.isSecureModeEnabled()
@@ -62,7 +67,6 @@ public final class LockManager {
     public func tryUnlock(reason: String, completion: @escaping (Bool) -> Void) {
         guard Prefs.isSecureModeEnabled() else { completion(true); return }
         if !isLocked { completion(true); return }
-
         let ctx = LAContext()
         var err: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
@@ -109,6 +113,15 @@ public final class LockManager {
         }
     }
 
+    // MARK: - Test support
+
+    /// Reset internal state for unit tests. Never call from production code.
+    /// Sets isLocked and cancels any running timers so each test starts clean.
+    internal func resetForTesting(locked: Bool) {
+        cancelTimers()
+        isLocked = locked
+    }
+
     // MARK: - Auto-lock timer (unlock duration)
 
     private func scheduleAutoLock() {
@@ -122,11 +135,19 @@ public final class LockManager {
 
     // MARK: - Idle lock timer
 
-    private func scheduleIdleLock() {
+    internal func scheduleIdleLock() {
         idleTimer?.invalidate()
-        let mins = Prefs.idleLockIntervalMinutes()
-        guard mins > 0 else { return }
-        idleTimer = Timer.scheduledTimer(withTimeInterval: Double(mins * 60), repeats: false) { [weak self] _ in
+        let interval: TimeInterval
+        if let override = idleLockSecondsOverride {
+            // Test override: skip the minutes-to-seconds conversion so tests
+            // can fire the timer in milliseconds rather than waiting 60+ seconds.
+            interval = override
+        } else {
+            let mins = Prefs.idleLockIntervalMinutes()
+            guard mins > 0 else { return }
+            interval = Double(mins * 60)
+        }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             self?.lock()
         }
     }
@@ -147,7 +168,7 @@ public final class LockManager {
             kSecAttrService:    keychainService,
             kSecAttrAccount:    keychainAccount,
             kSecValueData:      data,
-            // Inaccessible when screen is locked — ties ClipWatch to the
+            // Inaccessible when screen is locked -- ties ClipWatch to the
             // macOS user keychain state, just like 1Password.
             kSecAttrAccessible: kSecAttrAccessibleWhenUnlocked,
         ]

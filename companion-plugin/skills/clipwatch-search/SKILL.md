@@ -14,6 +14,29 @@ Fallback: `sqlite3 ~/Library/Application\ Support/ClipWatch/clips.db "<sql>"`
 
 ---
 
+## Lock Detection (applies to all data requests)
+
+When Secure Mode is active and ClipWatch is locked, any request to `/clips`,
+`/search`, `/sensitive`, `/clip`, `/pin`, or `/delete` returns **HTTP 423**.
+
+Use this pattern for every data call:
+
+```bash
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/ENDPOINT')
+body=$(cat /tmp/cw_response.json)
+```
+
+**If `http_code` is `423`:** stop immediately. Tell the user:
+
+> **ClipWatch is locked — unlock from the menu bar to continue.**
+>
+> Click the ClipWatch icon in the menu bar and authenticate with Touch ID or
+> your Mac password, then try again.
+
+Do **not** fall back to the SQLite database — it does not bypass the lock.
+
+---
+
 ## Step 1 — Parse the Query
 
 The user wants to find something they copied. Extract:
@@ -27,11 +50,13 @@ The user wants to find something they copied. Extract:
 ## Step 2 — Full-Text Search
 
 ```bash
-curl -s 'http://localhost:57822/search?q=ENCODED_QUERY&limit=50'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/search?q=ENCODED_QUERY&limit=50')
+body=$(cat /tmp/cw_response.json)
 ```
 
-URL-encode the search query (spaces → %20, quotes → %22, etc.).
+If `http_code` is `423`, apply Lock Detection above and stop.
 
+URL-encode the search query (spaces → %20, quotes → %22, etc.).
 The API uses FTS5 — supports quoted phrases, prefix search (word*), and AND/OR operators.
 
 Examples:
@@ -44,12 +69,15 @@ Examples:
 ## Step 3 — Filter Results (if needed)
 
 If the user specified a source app filter:
-```bash
-# Get all recent and filter client-side
-curl -s 'http://localhost:57822/clips?limit=500'
-```
-Filter `.source` field for the bundle ID (e.g. `com.google.Chrome`, `com.apple.Terminal`).
 
+```bash
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/clips?limit=500')
+body=$(cat /tmp/cw_response.json)
+```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
+
+Filter `.source` field for the bundle ID (e.g. `com.google.Chrome`, `com.apple.Terminal`).
 If date filtering is needed, compare `.ts` (ISO8601) against the requested range.
 
 ---
@@ -57,8 +85,11 @@ If date filtering is needed, compare `.ts` (ISO8601) against the requested range
 ## Step 4 — Direct Fetch by ID (if user references a specific item)
 
 ```bash
-curl -s 'http://localhost:57822/clip?id=N'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/clip?id=N')
+body=$(cat /tmp/cw_response.json)
 ```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
 
 ---
 

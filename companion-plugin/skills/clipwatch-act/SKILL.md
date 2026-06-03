@@ -16,57 +16,98 @@ You are taking action on Louis's clipboard history via the ClipWatch API.
 
 ---
 
+## Lock Detection (applies to all data requests)
+
+When Secure Mode is active and ClipWatch is locked, any request to `/clips`,
+`/search`, `/sensitive`, `/clip`, `/pin`, or `/delete` returns **HTTP 423**.
+
+Use this pattern for every data call:
+
+```bash
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/ENDPOINT')
+body=$(cat /tmp/cw_response.json)
+```
+
+**If `http_code` is `423`:** stop immediately. Tell the user:
+
+> **ClipWatch is locked — unlock from the menu bar to continue.**
+>
+> Click the ClipWatch icon in the menu bar and authenticate with Touch ID or
+> your Mac password, then try again.
+
+Do **not** fall back to the SQLite database — it does not bypass the lock.
+
+---
+
 ## Available Actions
 
 ### Pin / Unpin a Clip
 
+Before acting, fetch the clip to show what's being pinned:
+
 ```bash
-# Toggle pin (pinned → unpinned or unpinned → pinned)
-curl -s 'http://localhost:57822/pin?id=N'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/clip?id=N')
+body=$(cat /tmp/cw_response.json)
 ```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
+
+Then toggle pin (pinned → unpinned or unpinned → pinned):
+
+```bash
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/pin?id=N')
+body=$(cat /tmp/cw_response.json)
+```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
 
 Returns `{"success": true, "id": N, "action": "pin_toggled"}`.
 
-Before acting, fetch the clip to show what's being pinned:
-```bash
-curl -s 'http://localhost:57822/clip?id=N'
-```
-
 ### Delete a Specific Clip
 
+Always show the clip preview and ask for confirmation first.
+
 ```bash
-curl -s 'http://localhost:57822/delete?id=N'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/delete?id=N')
+body=$(cat /tmp/cw_response.json)
 ```
 
-Returns `{"success": true, "id": N, "action": "deleted"}`.
+If `http_code` is `423`, apply Lock Detection above and stop.
 
-Always show the clip preview and ask for confirmation first.
+Returns `{"success": true, "id": N, "action": "deleted"}`.
 
 ### Delete All Sensitive Items
 
 1. Fetch sensitive clips:
+
 ```bash
-curl -s http://localhost:57822/sensitive
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/sensitive')
+body=$(cat /tmp/cw_response.json)
 ```
 
+If `http_code` is `423`, apply Lock Detection above and stop.
+
 2. Show count + truncated previews (never full content).
-
 3. Ask for confirmation: "Delete these N sensitive items?"
-
 4. If confirmed, delete each by ID:
+
 ```bash
-curl -s 'http://localhost:57822/delete?id=N'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/delete?id=N')
+body=$(cat /tmp/cw_response.json)
 ```
 
 ### Find and Delete Clips Matching a Pattern
 
 1. Search for the pattern:
+
 ```bash
-curl -s 'http://localhost:57822/search?q=TERM&limit=200'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/search?q=TERM&limit=200')
+body=$(cat /tmp/cw_response.json)
 ```
 
-2. Show matches with previews, ask which to delete.
+If `http_code` is `423`, apply Lock Detection above and stop.
 
+2. Show matches with previews, ask which to delete.
 3. Delete confirmed items one by one.
 
 ---
@@ -78,6 +119,7 @@ curl -s http://localhost:57822/ping
 ```
 
 If no response, ClipWatch is not running — tell the user to open it first.
+If the response contains `"locked": true`, apply Lock Detection above before any action.
 
 ---
 

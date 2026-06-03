@@ -15,23 +15,51 @@ Fallback (if ClipWatch not running): `sqlite3 ~/Library/Application\ Support/Cli
 
 ---
 
+## Lock Detection (applies to all data requests)
+
+When Secure Mode is active and ClipWatch is locked, any request to `/clips`,
+`/search`, `/sensitive`, `/clip`, `/pin`, or `/delete` returns **HTTP 423**.
+
+Use this pattern for every data call:
+
+```bash
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/ENDPOINT')
+body=$(cat /tmp/cw_response.json)
+```
+
+**If `http_code` is `423`:** stop immediately. Tell the user:
+
+> **ClipWatch is locked — unlock from the menu bar to continue.**
+>
+> Click the ClipWatch icon in the menu bar and authenticate with Touch ID or
+> your Mac password, then try again.
+
+Do **not** fall back to the SQLite database — it does not bypass the lock.
+
+---
+
 ## Step 1 — Health Check
 
 ```bash
 curl -s http://localhost:57822/health
 ```
 
-If this returns a connection error, ClipWatch is not running. Tell the user to open ClipWatch from /Applications/ClipWatch.app and try again.
+If this returns a connection error, ClipWatch is not running. Tell the user to open
+ClipWatch from /Applications/ClipWatch.app and try again.
 
-If it returns JSON with `running: true`, proceed.
+If it returns JSON with `running: true`, proceed. If the response contains
+`"locked": true`, apply the Lock Detection rule above before continuing to Step 2.
 
 ---
 
 ## Step 2 — Recent Clips Summary
 
 ```bash
-curl -s 'http://localhost:57822/clips?limit=100'
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/clips?limit=100')
+body=$(cat /tmp/cw_response.json)
 ```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
 
 Parse the JSON array. Compute:
 - Total clips returned
@@ -46,8 +74,11 @@ Parse the JSON array. Compute:
 ## Step 3 — Sensitive Items Audit
 
 ```bash
-curl -s http://localhost:57822/sensitive
+http_code=$(curl -s -o /tmp/cw_response.json -w '%{http_code}' 'http://localhost:57822/sensitive')
+body=$(cat /tmp/cw_response.json)
 ```
+
+If `http_code` is `423`, apply Lock Detection above and stop.
 
 For each sensitive clip:
 - Show a **truncated preview** (first 40 chars) — never show the full content
@@ -58,7 +89,8 @@ For each sensitive clip:
 
 ## Step 4 — Pinned Items
 
-From the Step 2 result, filter `pinned == true`. List each pinned clip with preview (first 80 chars) and source app.
+From the Step 2 result, filter `pinned == true`. List each pinned clip with preview
+(first 80 chars) and source app.
 
 ---
 
@@ -68,7 +100,6 @@ Present a structured summary:
 
 ```
 ClipWatch Analysis — [date]
-
 Health: [clip count] clips, [DB size] KB, port 57822 active
 
 Recent Activity (last 100):
