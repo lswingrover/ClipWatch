@@ -29,7 +29,7 @@ import Network
 
 // MARK: - Payload types
 
-struct CWAPIHealthPayload: Codable {
+public struct CWAPIHealthPayload: Codable {
     let running:    Bool
     let clipCount:  Int
     let dbPath:     String
@@ -37,7 +37,7 @@ struct CWAPIHealthPayload: Codable {
     let port:       UInt16
 }
 
-struct CWAPIClip: Codable {
+public struct CWAPIClip: Codable {
     let id:        Int64
     let content:   String
     let ts:        String   // ISO8601
@@ -47,13 +47,13 @@ struct CWAPIClip: Codable {
     let preview:   String   // first 120 chars, whitespace-collapsed
 }
 
-struct CWAPISearchResult: Codable {
+public struct CWAPISearchResult: Codable {
     let query:   String
     let count:   Int
     let results: [CWAPIClip]
 }
 
-struct CWAPIMutationResult: Codable {
+public struct CWAPIMutationResult: Codable {
     let success: Bool
     let id:      Int64
     let action:  String
@@ -61,17 +61,17 @@ struct CWAPIMutationResult: Codable {
 
 // MARK: - Server
 
-final class ClipWatchAPIServer {
+public final class ClipWatchAPIServer {
 
     // MARK: - State
     private var listener:    NWListener?
     private var connections: [NWConnection] = []
-    private(set) var isRunning: Bool = false
-    var port: UInt16 = 57_822
+    public private(set) var isRunning: Bool = false
+    public var port: UInt16 = 57_822
 
     // MARK: - Start / Stop
 
-    func start() {
+    public func start() {
         guard !isRunning else { return }
         let params = NWParameters.tcp
         params.allowLocalEndpointReuse = true
@@ -102,7 +102,7 @@ final class ClipWatchAPIServer {
         listener?.start(queue: DispatchQueue(label: "clipwatch.api.listener", qos: .utility))
     }
 
-    func stop() {
+    public func stop() {
         listener?.cancel()
         listener = nil
         connections.forEach { $0.cancel() }

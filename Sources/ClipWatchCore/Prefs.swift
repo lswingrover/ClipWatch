@@ -25,17 +25,17 @@ public enum Prefs {
     ]
 
     public static func menuCount() -> Int {
-        public let v = UserDefaults.standard.integer(forKey: menuItemCount)
+        let v = UserDefaults.standard.integer(forKey: menuItemCount)
         return (v >= 5 && v <= 25) ? v : 10
     }
 
     public static func hotkeyVirtualKey() -> Int {
-        public let v = UserDefaults.standard.integer(forKey: hotkeyKeyCode)
+        let v = UserDefaults.standard.integer(forKey: hotkeyKeyCode)
         return v > 0 ? v : 9  // default V
     }
 
     public static func hotkeyModifierFlags() -> Int {
-        public let v = UserDefaults.standard.integer(forKey: hotkeyModifiers)
+        let v = UserDefaults.standard.integer(forKey: hotkeyModifiers)
         // default: option (524288) + command (1048576) = 1572864
         return v > 0 ? v : 1572864
     }
@@ -52,13 +52,13 @@ public enum Prefs {
     }
 
     public static func screenMode() -> String {
-        public let v = UserDefaults.standard.string(forKey: screenFocusMode) ?? ""
+        let v = UserDefaults.standard.string(forKey: screenFocusMode) ?? ""
         return v.isEmpty ? "activeApp" : v
     }
 
     /// Poll interval in seconds. Clamped to 0.5–5.0; defaults to 1.0 s.
     public static func pollIntervalSeconds() -> TimeInterval {
-        public let v = UserDefaults.standard.double(forKey: pollInterval)
+        let v = UserDefaults.standard.double(forKey: pollInterval)
         return (v >= 0.5 && v <= 5.0) ? v : 1.0
     }
 }

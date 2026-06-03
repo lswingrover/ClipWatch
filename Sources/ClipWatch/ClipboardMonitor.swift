@@ -176,6 +176,5 @@ final class ClipboardMonitor {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let clipStoreDidChange = Notification.Name("clipStoreDidChange")
     static let hotkeyChanged      = Notification.Name("hotkeyChanged")
 }

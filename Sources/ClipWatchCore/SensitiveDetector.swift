@@ -14,7 +14,7 @@ import Foundation
 public enum SensitiveDetector {
 
     private static let patterns: [NSRegularExpression] = {
-        public let sources: [String] = [
+        let sources: [String] = [
             // ── Payment / identity ────────────────────────────────────────────
             // Credit / debit cards: 4×4 digit groups with optional space or dash
             #"\b(?:\d{4}[\s\-]){3}\d{4}\b"#,
@@ -60,7 +60,7 @@ public enum SensitiveDetector {
         // 10 is the practical floor: SSNs are 11 chars, but we want headroom for
         // strings with surrounding whitespace that get trimmed by NSRange matching.
         guard content.count >= 10 else { return false }
-        public let range = NSRange(content.startIndex..., in: content)
+        let range = NSRange(content.startIndex..., in: content)
         return patterns.contains { $0.firstMatch(in: content, range: range) != nil }
     }
 }
