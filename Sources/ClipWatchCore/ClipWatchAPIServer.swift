@@ -35,6 +35,13 @@ public struct CWAPIHealthPayload: Codable {
     let dbPath:     String
     let dbSizeKB:   Int64
     let port:       UInt16
+    public init(running: Bool, clipCount: Int, dbPath: String, dbSizeKB: Int64, port: UInt16) {
+        self.running = running
+        self.clipCount = clipCount
+        self.dbPath = dbPath
+        self.dbSizeKB = dbSizeKB
+        self.port = port
+    }
 }
 
 public struct CWAPIClip: Codable {
@@ -45,18 +52,37 @@ public struct CWAPIClip: Codable {
     let source:    String?  // bundle ID of source app
     let sensitive: Bool
     let preview:   String   // first 120 chars, whitespace-collapsed
+    public init(id: Int64, content: String, ts: String, pinned: Bool, source: String? = nil, sensitive: Bool, preview: String) {
+        self.id = id
+        self.content = content
+        self.ts = ts
+        self.pinned = pinned
+        self.source = source
+        self.sensitive = sensitive
+        self.preview = preview
+    }
 }
 
 public struct CWAPISearchResult: Codable {
     let query:   String
     let count:   Int
     let results: [CWAPIClip]
+    public init(query: String, count: Int, results: [CWAPIClip]) {
+        self.query = query
+        self.count = count
+        self.results = results
+    }
 }
 
 public struct CWAPIMutationResult: Codable {
     let success: Bool
     let id:      Int64
     let action:  String
+    public init(success: Bool, id: Int64, action: String) {
+        self.success = success
+        self.id = id
+        self.action = action
+    }
 }
 
 // MARK: - Server
@@ -301,5 +327,8 @@ public final class ClipWatchAPIServer {
             }
         }
         return ""
+    }
+    public init(port: UInt16 = 57_822) {
+        self.port = port
     }
 }
