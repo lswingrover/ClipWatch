@@ -5,7 +5,7 @@ description: "Take actions on ClipWatch clipboard history — pin important clip
 
 # ClipWatch Act
 
-You are taking action on Louis's clipboard history via the ClipWatch API.
+You are taking action on your clipboard history via the ClipWatch API.
 
 ## Safety Rules (Non-Negotiable)
 

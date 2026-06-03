@@ -1,11 +1,11 @@
 ---
 name: clipwatch-search
-description: "Search Louis's clipboard history using full-text search. Finds clips by content, source app, or date. Trigger phrases: search clipboard, find in clipboard, did I copy X, search my clipboard history, find that thing I copied, clipwatch search, what did I copy from Y."
+description: "Search your clipboard history using full-text search. Finds clips by content, source app, or date. Trigger phrases: search clipboard, find in clipboard, did I copy X, search my clipboard history, find that thing I copied, clipwatch search, what did I copy from Y."
 ---
 
 # ClipWatch Search
 
-You are searching Louis's clipboard history via the ClipWatch API.
+You are searching your clipboard history via the ClipWatch API.
 
 ## Data Source
 

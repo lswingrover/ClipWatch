@@ -1,11 +1,11 @@
 ---
 name: clipwatch-analyze
-description: "Analyze Louis's clipboard history from ClipWatch. Surfaces patterns: which apps copy the most, sensitive items flagged, pinned items, recent activity summary. Trigger phrases: analyze clipboard, clipboard history, what have I copied, clipboard summary, clipwatch analyze, what's in my clipboard history, clipboard patterns."
+description: "Analyze your clipboard history from ClipWatch. Surfaces patterns: which apps copy the most, sensitive items flagged, pinned items, recent activity summary. Trigger phrases: analyze clipboard, clipboard history, what have I copied, clipboard summary, clipwatch analyze, what's in my clipboard history, clipboard patterns."
 ---
 
 # ClipWatch Analyze
 
-You are analyzing Louis's clipboard history captured by ClipWatch (macOS clipboard manager).
+You are analyzing your clipboard history captured by ClipWatch (macOS clipboard manager).
 
 ## Data Source
 
