@@ -101,7 +101,7 @@ Commit format (Conventional Commits):
 
 ## Companion plugin
 
-The Claude Cowork plugin provides `clipwatch-analyze`, `clipwatch-act`, and `clipwatch-search` skills. Plugin files follow the obrien plugin spec. Run `scotty:clipwatch-companion-ship` to rebuild after any SKILL.md change.
+The Claude Cowork plugin provides `clipwatch-analyze`, `clipwatch-act`, and `clipwatch-search` skills. Plugin files follow the Cowork plugin spec. Run `scotty:clipwatch-companion-ship` to rebuild after any SKILL.md change.
 
 ---
 
@@ -111,4 +111,3 @@ The Claude Cowork plugin provides `clipwatch-analyze`, `clipwatch-act`, and `cli
 - [NetWatch](https://github.com/lswingrover/NetWatch) — network health monitor
 - [GridForge](https://github.com/lswingrover/GridForge) — window layout manager
 - [Summon](https://github.com/lswingrover/Summon) — text expander
-- [obrien](https://github.com/lswingrover/obrien) — Cowork companion plugin framework
