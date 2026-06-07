@@ -285,6 +285,9 @@ MIT. See [LICENSE](LICENSE).
 These apps are built by the same author and follow the same install pattern — build from source, no App Store, optional Claude companion plugin:
 
 | App | What it does |
-|-----|-------------|
+|- [GridForge](https://github.com/lswingrover/GridForge) — window layout manager, same Mac
+- [Summon](https://github.com/lswingrover/Summon) — text expander, same Mac
+
+-----|-------------|
 | [NetWatch](https://github.com/lswingrover/NetWatch) | Network monitoring — ping latency, DNS health, Wi-Fi metrics, automatic incident bundling and ISP escalation drafts |
 | [MacWatch](https://github.com/lswingrover/MacWatch) | Mac system health — CPU temps, memory pressure, battery health, process monitoring, composite health score |
