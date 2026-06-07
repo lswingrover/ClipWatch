@@ -26,6 +26,24 @@ ClipWatch does one thing: it remembers what you copied, lets you find it instant
 
 ---
 
+
+**How ClipWatch compares to the field:**
+
+| | Maccy | Paste | Alfred Clipboard | ClipWatch |
+|---|---|---|---|---|
+| **Price** | Free | $3/month | Requires Alfred ($35) | Free |
+| **Open source** | Yes (MIT) | No | No | Yes (MIT) |
+| **Storage format** | Text + images + rich text | Everything | Everything | Plain text only (deliberate) |
+| **Sensitive detection** | None | None | None | 11 pattern classes -- auto-detected on insert |
+| **Touch ID protection** | No | No | No | Yes -- locked clips require biometric before reveal/paste |
+| **iCloud sync** | No | Yes (privacy risk) | No | No (local only, by design) |
+| **Companion API** | No | No | No | Yes -- full REST API at localhost; Claude can read, pin, delete clips |
+| **Analytics** | None | None | None | Pattern analysis, source-app tracking, sensitivity stats |
+| **Images** | Yes | Yes | Yes | No (deliberate -- images are untextable and privacy-risky) |
+| **Ignore apps list** | Yes | Yes | No | Planned (Phase 2) |
+
+The key choices: Maccy is the closest spiritual predecessor -- free, open-source, keyboard-driven. ClipWatch departs in three ways: sensitive detection (automatic, on every insert), plain-text-only storage (the paste landing wherever you need it, not where the source app formatted it), and the companion API (so Claude can surface, annotate, and act on clipboard history).
+
 ## Features
 
 ### Clipboard history
