@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-push guard: make main pushes deliberate. Override with ALLOW_MAIN_PUSH=1.
+# Source of truth: scripts/githooks/pre-push. Install: bash scripts/install-git-hooks.sh
+# Part of the Shared-Checkout & Worktree Discipline (AG_DEV_POLICY.md §14.4).
+# PR-merge workflow is unaffected — only direct local HEAD:main pushes are gated.
+set -eu
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo DETACHED)
+BLOCK=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case $remote_ref in
+    refs/heads/main) BLOCK=1 ;;
+  esac
+done
+if [ $BLOCK -eq 1 ]; then
+  if [ "${ALLOW_MAIN_PUSH:-0}" = 1 ]; then
+    echo "pre-push: main push ALLOWED via ALLOW_MAIN_PUSH from branch $BRANCH" >&2
+    exit 0
+  fi
+  echo >&2
+  echo "BLOCKED: push to origin/main from branch $BRANCH" >&2
+  echo 'If intentional, re-run with: ALLOW_MAIN_PUSH=1 git push ...' >&2
+  echo 'Guard makes main-destined pushes deliberate (DevPM branch-state discipline).' >&2
+  echo >&2
+  exit 1
+fi
+exit 0
