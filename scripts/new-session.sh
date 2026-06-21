@@ -7,9 +7,11 @@
 # anyone can tell what each is at a glance. No random codenames.
 #
 # This one command:
-#   - creates branch <slug> + matching worktree ../<repo>-wt-<slug> off origin/staging
+#   - creates branch <slug> + matching worktree ../<repo>-wt-<slug> off origin/HEAD
+#     (this repo's integration branch — dev in laforge, staging in enterprise-d, ...)
 #   - copies .env essentials + links deps (immediately runnable)
-#   - installs the shared git hooks (pre-push main-guard + post-commit auto-push)
+#   - vendors (if needed) + activates the canonical git hooks: shared-checkout guard,
+#     main-guard, secret-scan, and post-commit auto-push ("remote control")
 #   - seeds origin/<slug> so the branch is under remote control from commit #1
 #   - prints the cd
 #
@@ -31,7 +33,14 @@ EOF
   exit 2
 fi
 
-# Shared git hooks (idempotent): pre-push main-guard + post-commit auto-push.
+# Zero-touch hooks. If this repo vendors the canonical set from a source (laforge for
+# AG repos, scotty for personal) but hasn't yet (no integrity manifest present), bootstrap
+# it; then activate (set core.hooksPath). Idempotent — a repo that already committed its
+# vendored scripts/githooks/ just re-activates. Source repos (laforge/scotty) ship the
+# manifest themselves, so they skip the vendor step and only activate.
+if [ -f "$ROOT/scripts/vendor-githooks.sh" ] && [ ! -f "$ROOT/scripts/githooks/CANONICAL.sha256" ]; then
+  bash "$ROOT/scripts/vendor-githooks.sh" >/dev/null 2>&1 || true
+fi
 bash "$ROOT/scripts/install-git-hooks.sh" >/dev/null 2>&1 || true
 
 # Heavy lifting (worktree + env copy + deps) is session-worktree.sh's job.
