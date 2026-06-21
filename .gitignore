@@ -4,3 +4,7 @@
 *.swp
 .DS_Store
 /tmp/
+
+# Vendored git-hook dispatcher fragments live in *.d/ dirs — keep them despite the *.d rule above
+!scripts/githooks/pre-commit.d/
+!scripts/githooks/pre-push.d/
