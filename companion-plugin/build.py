@@ -23,7 +23,7 @@ OUT  = HERE / 'clipwatch-companion.plugin'
 
 PLUGIN_META = {
     'name': 'clipwatch-companion',
-    'version': '1.0.0',
+    'version': '1.0.1',
     'description': (
         'AI skills for ClipWatch — analyze clipboard history, search clips, '
         'pin important items, and delete sensitive content. '
