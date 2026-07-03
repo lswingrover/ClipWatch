@@ -59,6 +59,7 @@ final class PreferencesViewController: NSViewController {
     private var unlockDurationPopup: NSPopUpButton!
     private var lockOnSleepToggle:    NSButton!
     private var idleLockPopup:        NSPopUpButton!
+    private var skipConcealedToggle:  NSButton!
     private var excludedTable:       NSTableView!
     private var items:               [ExclusionItem] = []
 
@@ -191,6 +192,19 @@ final class PreferencesViewController: NSViewController {
                                 target: self, action: #selector(clearAllHistory))
         clearBtn.bezelStyle = .rounded
         controlsStack.addArrangedSubview(clearBtn)
+        controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
+
+        // Privacy — honor the source app's "this is secret" hint
+        controlsStack.addArrangedSubview(sectionHeader("Privacy"))
+        skipConcealedToggle = NSButton(
+            checkboxWithTitle: "Skip clips marked secret (passwords)",
+            target: self, action: #selector(skipConcealedToggled)
+        )
+        skipConcealedToggle.toolTip =
+            "Ignore anything the source app flags as concealed "
+            + "(org.nspasteboard.ConcealedType) — passwords from 1Password or browser "
+            + "password fields — so they never enter the history. Everything else is still captured."
+        controlsStack.addArrangedSubview(skipConcealedToggle)
         controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
 
         // Exclusions header
@@ -345,6 +359,7 @@ final class PreferencesViewController: NSViewController {
         }
 
         secureModeToggle.state = Prefs.isSecureModeEnabled() ? .on : .off
+        skipConcealedToggle.state = Prefs.skipConcealedEnabled() ? .on : .off
 
         let storedSecs = Prefs.unlockDurationSeconds()
         let idx = unlockDurationValues.firstIndex(of: storedSecs) ?? 0
@@ -392,6 +407,10 @@ final class PreferencesViewController: NSViewController {
 
     @objc private func lockOnSleepToggled() {
         UserDefaults.standard.set(lockOnSleepToggle.state == .on, forKey: Prefs.lockOnSleep)
+    }
+
+    @objc private func skipConcealedToggled() {
+        UserDefaults.standard.set(skipConcealedToggle.state == .on, forKey: Prefs.skipConcealed)
     }
 
     @objc private func idleLockChanged() {

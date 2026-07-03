@@ -15,6 +15,7 @@ public enum Prefs {
     public static let idleLockMinutes  = "idleLockMinutes"  // Int  -- 0=never, else minutes of inactivity
     public static let launchAtLogin    = "launchAtLogin"    // Bool
     public static let pollInterval     = "pollInterval"     // Double -- seconds between clipboard checks
+    public static let skipConcealed    = "skipConcealed"    // Bool -- skip clips the source flags secret (ConcealedType)
 
     /// Password managers seeded into the exclusion list on first run. These are
     /// *seeds*, not a permanent floor — see `seedDefaultExcludesIfNeeded()`.
@@ -98,5 +99,12 @@ public enum Prefs {
     public static func pollIntervalSeconds() -> TimeInterval {
         let v = defaults.double(forKey: pollInterval)
         return (v >= 0.5 && v <= 5.0) ? v : 1.0
+    }
+
+    /// Whether to skip clips the source app flagged as secret via
+    /// `org.nspasteboard.ConcealedType` — e.g. passwords copied from 1Password or
+    /// a browser password field. Default false: monitor everything, secrets included.
+    public static func skipConcealedEnabled() -> Bool {
+        defaults.bool(forKey: skipConcealed)
     }
 }

@@ -25,6 +25,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.2] — 2026-07-03
+### Added
+- **"Skip clips marked secret" privacy toggle** (Preferences → Privacy). When on,
+  ClipWatch ignores anything the source app flags with `org.nspasteboard.ConcealedType`
+  — passwords copied from 1Password or browser password fields — so they never enter
+  the plaintext history, while every other app stays monitored. Off by default
+  (monitor everything, secrets included). `Prefs.skipConcealed` / `skipConcealedEnabled()`;
+  honored in `ClipboardMonitor.poll()` after the change count is consumed.
+
+---
+
 ## [1.6.1] — 2026-07-02
 ### Changed
 - **App exclusions are now seed-once, then authoritative.** The password-manager

@@ -102,6 +102,14 @@ final class ClipboardMonitor {
               !content.isEmpty else { return }
         lastChangeCount = current
 
+        // Concealed-content skip (opt-in). Password managers and browser password
+        // fields tag secret copies with org.nspasteboard.ConcealedType. When the
+        // user enables "Skip clips marked secret", honor that hint so passwords
+        // never reach the plaintext store — even while every other app is monitored.
+        // Checked after consuming the change count: this is a handled "decided to
+        // skip" outcome, not a failed read, so we don't re-evaluate it every poll.
+        if Prefs.skipConcealedEnabled(), pasteboardIsConcealed() { return }
+
         let frontApp = NSWorkspace.shared.frontmostApplication
         let source   = frontApp?.bundleIdentifier
 
@@ -120,6 +128,15 @@ final class ClipboardMonitor {
 
         ClipStore.shared.insert(content: content, source: source)
         NotificationCenter.default.post(name: .clipStoreDidChange, object: nil)
+    }
+
+    // MARK: - Concealed content
+
+    /// True when the general pasteboard declares `org.nspasteboard.ConcealedType`,
+    /// the community convention password managers use to mark secret clips.
+    private func pasteboardIsConcealed() -> Bool {
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        return NSPasteboard.general.types?.contains(concealed) ?? false
     }
 
     // MARK: - AX browser URL

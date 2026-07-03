@@ -229,4 +229,23 @@ struct ClipWatchCoreTests {
         #expect(Prefs.excludedAppList() == ["com.example.foo"])
         #expect(!Prefs.excludedAppList().contains("com.1password.1password"))
     }
+
+    // MARK: - Concealed-content toggle
+
+    @Test("skipConcealed defaults off — monitor everything, secrets included")
+    func skipConcealedDefaultsOff() {
+        let ud = makeTestDefaults()
+        Prefs.defaults = ud
+
+        #expect(Prefs.skipConcealedEnabled() == false)
+    }
+
+    @Test("skipConcealed reads the stored flag")
+    func skipConcealedReadsFlag() {
+        let ud = makeTestDefaults()
+        ud.set(true, forKey: Prefs.skipConcealed)
+        Prefs.defaults = ud
+
+        #expect(Prefs.skipConcealedEnabled() == true)
+    }
 }
