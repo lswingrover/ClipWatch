@@ -300,7 +300,7 @@ final class PreferencesViewController: NSViewController {
     // MARK: - Data model
 
     private func buildItems() {
-        let apps = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps) ?? Prefs.defaultExcludedApps
+        let apps = Prefs.excludedAppList()
         let urls = UserDefaults.standard.stringArray(forKey: Prefs.excludedURLs) ?? []
         items = apps.map { .app(bundleID: $0) } + urls.map { .url(pattern: $0) }
     }

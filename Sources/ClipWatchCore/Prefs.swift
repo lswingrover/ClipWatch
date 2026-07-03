@@ -16,6 +16,8 @@ public enum Prefs {
     public static let launchAtLogin    = "launchAtLogin"    // Bool
     public static let pollInterval     = "pollInterval"     // Double -- seconds between clipboard checks
 
+    /// Password managers seeded into the exclusion list on first run. These are
+    /// *seeds*, not a permanent floor — see `seedDefaultExcludesIfNeeded()`.
     public static let defaultExcludedApps: [String] = [
         "com.1password.1password",
         "com.agilebits.onepassword-osx",
@@ -24,6 +26,27 @@ public enum Prefs {
         "com.bitwarden.desktop",
         "com.lastpass.LastPass",
     ]
+
+    /// Seed the default app-exclusions into UserDefaults on first run only.
+    ///
+    /// The seeds are written into `excludedApps` once — the first time ClipWatch
+    /// launches — so they appear in Preferences where the user can keep or remove
+    /// them. After that the stored list is authoritative: an empty list means
+    /// "monitor everything", and removing a seed actually removes it.
+    ///
+    /// Detection is by key-presence, not emptiness: `object(forKey:) == nil` means
+    /// the user has never had a list (seed it now); a present list — even an empty
+    /// one — is a settled user choice and is left untouched.
+    public static func seedDefaultExcludesIfNeeded() {
+        guard defaults.object(forKey: excludedApps) == nil else { return }
+        defaults.set(defaultExcludedApps, forKey: excludedApps)
+    }
+
+    /// The user's app-exclusion list, read verbatim. Empty means monitor every
+    /// app. Never falls back to `defaultExcludedApps` — seeding handles first-run.
+    public static func excludedAppList() -> [String] {
+        defaults.stringArray(forKey: excludedApps) ?? []
+    }
 
     // Injectable UserDefaults — override in unit tests to avoid polluting UserDefaults.standard.
     // Production code always uses the default (.standard). Tests swap this per-suite.

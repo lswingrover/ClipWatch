@@ -88,10 +88,19 @@ final class ClipboardMonitor {
     private func poll() {
         let current = NSPasteboard.general.changeCount
         guard current != lastChangeCount else { return }
-        lastChangeCount = current
 
+        // Read the content BEFORE consuming the change count. Some apps declare
+        // pasteboard types up front and then supply the data lazily/asynchronously,
+        // so string(forType:) can momentarily return nil in the instant right after
+        // changeCount advances. The old code advanced lastChangeCount first, which
+        // meant that transient-empty read marked the change "seen" and it was never
+        // reconsidered — the clip was lost forever. By only consuming the change once
+        // we've actually read text, a momentarily-empty read simply retries on the
+        // next poll (and genuinely non-text content, e.g. an image, is re-checked
+        // cheaply until the next copy moves the change count).
         guard let content = NSPasteboard.general.string(forType: .string),
               !content.isEmpty else { return }
+        lastChangeCount = current
 
         let frontApp = NSWorkspace.shared.frontmostApplication
         let source   = frontApp?.bundleIdentifier

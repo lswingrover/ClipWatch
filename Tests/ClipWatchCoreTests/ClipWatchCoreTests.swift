@@ -18,8 +18,8 @@ import Foundation
 //   - All three clipwatch-companion skills handle 423 gracefully.    [SKILL.md]
 //   - swift test green with LockManager coverage.                    [this file]
 
-@Suite("LockManager", .serialized)
-struct LockManagerTests {
+@Suite("ClipWatchCore", .serialized)
+struct ClipWatchCoreTests {
 
     // MARK: - Helpers
 
@@ -184,5 +184,49 @@ struct LockManagerTests {
 
         let nowLocked = await MainActor.run { LockManager.shared.isLocked }
         #expect(nowLocked == false)
+    }
+
+    // MARK: - Exclusion seeding tests
+    //
+    // Verifies the seed-once-then-honor-literally model: password-manager
+    // defaults are seeded into `excludedApps` on first run only, and after that
+    // an empty list means "monitor everything" (no fallback that re-bans a
+    // cleared app). These live in this serialized suite — rather than a separate
+    // one — because they mutate the process-global Prefs.defaults, which would
+    // race against the LockManager tests if the two suites ran in parallel.
+
+    @Test("seeds default excludes when the key is absent")
+    func seedsWhenAbsent() {
+        let ud = makeTestDefaults()
+        Prefs.defaults = ud
+
+        #expect(ud.object(forKey: Prefs.excludedApps) == nil)
+        Prefs.seedDefaultExcludesIfNeeded()
+
+        #expect(Prefs.excludedAppList() == Prefs.defaultExcludedApps)
+        #expect(Prefs.excludedAppList().contains("com.1password.1password"))
+    }
+
+    @Test("does not re-seed a present empty list (monitor-everything is preserved)")
+    func doesNotReseedEmpty() {
+        let ud = makeTestDefaults()
+        ud.set([String](), forKey: Prefs.excludedApps)   // user cleared all excludes
+        Prefs.defaults = ud
+
+        Prefs.seedDefaultExcludesIfNeeded()
+
+        #expect(Prefs.excludedAppList().isEmpty)          // stayed empty, not re-seeded
+    }
+
+    @Test("honors a user-edited exclude list verbatim")
+    func honorsUserList() {
+        let ud = makeTestDefaults()
+        ud.set(["com.example.foo"], forKey: Prefs.excludedApps)
+        Prefs.defaults = ud
+
+        Prefs.seedDefaultExcludesIfNeeded()               // no-op: key present
+
+        #expect(Prefs.excludedAppList() == ["com.example.foo"])
+        #expect(!Prefs.excludedAppList().contains("com.1password.1password"))
     }
 }

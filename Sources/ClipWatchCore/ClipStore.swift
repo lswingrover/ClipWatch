@@ -97,9 +97,11 @@ public final class ClipStore {
     // MARK: - Write
 
     public func insert(content: String, source: String?) {
-        // App exclusion check
-        var excluded = UserDefaults.standard.stringArray(forKey: Prefs.excludedApps) ?? []
-        if excluded.isEmpty { excluded = Prefs.defaultExcludedApps }
+        // App exclusion check. The list is read verbatim — an empty list means
+        // "monitor everything". First-run seeding of the password-manager defaults
+        // happens in Prefs.seedDefaultExcludesIfNeeded() (called at launch), so
+        // there is no empty→defaults fallback here that would re-ban a cleared app.
+        let excluded = Prefs.excludedAppList()
         if let source, excluded.contains(source) { return }
 
         // Deduplicate: skip if identical to the most recent clip

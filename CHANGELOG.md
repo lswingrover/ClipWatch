@@ -25,6 +25,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.1] — 2026-07-02
+### Changed
+- **App exclusions are now seed-once, then authoritative.** The password-manager
+  defaults (1Password, Bitwarden, LastPass) are seeded into `excludedApps` on
+  first run via `Prefs.seedDefaultExcludesIfNeeded()`, so they appear in
+  Preferences where they can be kept or removed. The stored list is now honored
+  verbatim — an empty list means "monitor everything." Previously `ClipStore`
+  and Preferences fell back to the hardcoded defaults whenever the list was
+  empty, so clearing an exclusion silently re-applied it and there was no way to
+  actually remove 1Password from the exclusions.
+
+### Fixed
+- **ClipboardMonitor consume-before-validate race** — `poll()` advanced
+  `lastChangeCount` *before* reading the pasteboard string, so a copy that landed
+  without a readable plain-text flavor at the instant of the poll (lazy/async
+  pasteboard writes, or a transient non-text state) marked the change "seen" and
+  was never reconsidered — silently lost. Now the change count is only consumed
+  after a non-empty string read succeeds, so a momentarily-empty read retries on
+  the next poll instead of dropping the clip.
+
+---
+
 ## [1.6.0] -- 2026-06-02
 ### Added
 - **Keychain-backed lock/unlock** -- LockManager ties ClipWatch lock state to the

@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ note: Notification) {
         AppDelegate.shared = self
+        // Seed password-manager exclusions into Preferences on first run only,
+        // before the monitor starts. After this the stored list is authoritative.
+        Prefs.seedDefaultExcludesIfNeeded()
         setupStatusItem()
         monitor.start()
         hotkey.onActivate = { [weak self] in self?.panel.toggle() }
