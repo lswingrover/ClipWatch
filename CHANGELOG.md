@@ -25,6 +25,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.3] — 2026-07-16
+### Fixed
+- **Menu-bar paste is now reliable** — selecting a clip from the status-bar menu
+  sometimes did nothing. `menuClipClicked` wrote the pasteboard and fired Cmd+V on a
+  fixed delay without restoring focus to the target app, so the keystroke raced menu
+  dismissal and occasionally landed in no app. AppDelegate now captures the frontmost
+  app in `menuWillOpen` and re-activates it before pasting — mirroring the panel
+  (Cmd-Shift-V) path that already worked.
+
+---
+
 ## [1.6.2] — 2026-07-03
 ### Added
 - **"Skip clips marked secret" privacy toggle** (Preferences → Privacy). When on,

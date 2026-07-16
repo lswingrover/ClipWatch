@@ -3,7 +3,7 @@ import ClipWatchCore
 
 // MARK: - AppDelegate
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Accessible from PanelController's paste callback
     static weak var shared: AppDelegate?
 
@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem:       NSStatusItem!
     private var pendingUpdate:    UpdateInfo?
     private var menuRebuildTimer: Timer?
+    // Frontmost app captured when the status menu opens, so paste can restore
+    // focus to it before firing Cmd+V (mirrors PanelController's paste path).
+    private var previousApp:      NSRunningApplication?
 
     // MARK: - Launch
 
@@ -192,7 +195,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Quit ClipWatch",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        menu.delegate = self
         statusItem.menu = menu
+    }
+
+    // MARK: - Menu delegate
+
+    // Capture the frontmost app the instant the menu opens — while it is still
+    // the user's target app. A status-bar menu doesn't activate ClipWatch, so
+    // frontmostApplication here is the app the paste should land in.
+    func menuWillOpen(_ menu: NSMenu) {
+        previousApp = NSWorkspace.shared.frontmostApplication
     }
 
     // MARK: - Menu actions
@@ -200,8 +213,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuClipClicked(_ sender: NSMenuItem) {
         guard let content = sender.representedObject as? String else { return }
         LockManager.shared.touchActivity()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            self.paste(content)
+        // Restore focus to the target app before pasting, then fire Cmd+V.
+        // Without the explicit re-activation the keystroke races menu dismissal
+        // and sometimes lands in no app at all — the "doesn't always paste" bug.
+        let target = previousApp
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            target?.activate(options: .activateIgnoringOtherApps)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+                self.paste(content)
+            }
         }
     }
 
