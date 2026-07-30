@@ -131,7 +131,43 @@ echo "✅  Done"
 # ── 8. Launch ──────────────────────────────────────────────────────────────────
 echo ""
 echo "▶ Launching $APP_NAME..."
-open "$INSTALL_DIR/$APP_BUNDLE"
+
+# Step 6 restarts Dock + Finder to refresh icons, which briefly destabilises
+# LaunchServices. Firing `open` into that window returns:
+#     _LSOpenURLsWithCompletionHandler() failed with error -600
+# (-600 = procNotFound). Under `set -euo pipefail` that aborts the whole build,
+# leaving the app installed but NOT running. The `sleep 2` above narrows the
+# window but does not close it.
+#
+# And `open`'s exit status is not proof of life — it can return 0 while the app
+# crashes seconds later on launch. The only honest signal is the process being
+# up, so poll for it rather than claiming success blind.
+relaunched=false
+for attempt in 1 2 3 4 5; do
+    open "$INSTALL_DIR/$APP_BUNDLE" 2>/dev/null || true
+    for _ in $(seq 1 10); do
+        if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+            relaunched=true
+            break
+        fi
+        sleep 0.5
+    done
+    [[ "$relaunched" == true ]] && break
+    [[ "$attempt" -lt 5 ]] && echo "   · launch attempt $attempt failed, retrying…"
+    sleep "$attempt"
+done
+
+if [[ "$relaunched" != true ]]; then
+    echo "" >&2
+    echo "✗  Launch FAILED — $APP_NAME is NOT running." >&2
+    echo "   The build IS installed at $INSTALL_DIR/$APP_BUNDLE —" >&2
+    echo "   only the automatic launch failed. Start it manually:" >&2
+    echo "" >&2
+    echo "       open -a $APP_NAME" >&2
+    echo "" >&2
+    exit 1
+fi
+echo "✅  Launched (verified running)"
 
 echo ""
 echo "╔═══════════════════════════════════════════════╗"
