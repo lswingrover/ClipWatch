@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.4] — 2026-08-03
+
+- githooks: re-vendor canonical @ b15fcc44690b
+- githooks: re-vendor canonical @ ce8866e3c27c — --sweep now names its basis per repo
+- githooks+helpers: re-vendor from merged canonical @ b6cd55b35dd9
+- githooks: re-vendor from MERGED canonical @ 26a361a5faf6
+- githooks: re-vendor canonical @ 4d86568b4cc9 onto main
+- chore(githooks): vendor the discreet-denylist hook (#11)
+- chore(githooks): take the trunk-commit backup; drop a local-only file I shipped by mistake (#10)
+- chore(githooks): re-vendor — self-exclusion no longer names the env var (#9)
+- fix(build): verify the launch actually happened, and survive the Dock race (#8)
+- chore(githooks): re-vendor from canonical — self-exclusion was DEAD here (#7)
+- chore(session-tooling): vendor full session machinery from scotty
+
+Files changed in this ship:
+- M Sources/ClipWatch/Version.swift
+
 ## [1.5.4] — 2026-05-05
 ### Fixed
 - **AppDelegate `URL(string:)!`** — guarded with `guard let`; silent pasteboard write failure
